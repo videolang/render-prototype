@@ -41,7 +41,7 @@
 (define-syntax (define-header stx)
   (syntax-parse stx
     [(_ name:id width:nat)
-     #`(define-syntax name
+     #'(define-syntax name
          (syntax-rules ()
            [(_ #t input ks kf)
             (bit-string-case input
@@ -51,7 +51,20 @@
            [(_ #f)
             (bit-string width (str :: binary))]))]))
 
+(define-syntax (define-vlc-table stx)
+  (syntax-parse stx
+    [(_ name:id (tag number:nat width:nat) ...)
+     #'(define-syntax name
+         (syntax-rules ()
+           [(_ #t input ks kf)
+            (bit-string-case input
+              ([(= number :: bits width) (rest :: binary)]
+               (ks tag rest))
+              ...)]
+           [(_ #f str)
+            (raise-syntax-error "Not done yet")]))]))
 
+;; ===================================================================================================
 
 (define-constant PSC #b00000000000000010000 20)
 (define-header TR 5)
@@ -64,6 +77,44 @@
 (define-header GQUANT 5)
 (define-header GEI 1)
 (define-header GSPARE 8)
+
+(define-vlc-table MBA
+  (1        #b1 1)
+  (2        #b011 3)
+  (3        #b010 3)
+  (4        #b0011 4)
+  (5        #b0010 4)
+  (6        #b00011 5)
+  (7        #b00010 5)
+  (8        #b0000111 7)
+  (9        #b0000110 7)
+  (10       #b00001011 8)
+  (11       #b00001010 8)
+  (12       #b00001001 8)
+  (13       #b00001000 8)
+  (14       #b00000111 8)
+  (15       #b00000110 8)
+  (16       #b0000010111 10)
+  (17       #b0000010110 10)
+  (18       #b0000010101 10)
+  (19       #b0000010100 10)
+  (20       #b0000010011 10)
+  (21       #b0000010010 10)
+  (22       #b00000100011 11)
+  (23       #b00000100010 11)
+  (24       #b00000100001 11)
+  (25       #b00000100000 11)
+  (26       #b00000011111 11)
+  (27       #b00000011110 11)
+  (28       #b00000011101 11)
+  (29       #b00000011100 11)
+  (30       #b00000011011 11)
+  (31       #b00000011010 11)
+  (32       #b00000011001 11)
+  (stuffing #b00000001111 11)
+  (start    #b0000000000000001 16))
+
+;; ===================================================================================================
 
 (define (read-frame str)
   (bit-string-case str
@@ -92,6 +143,8 @@
       (gquant :: (GQUANT))
       (rest :: binary)]
      (displayln "yay"))))
+
+;; ===================================================================================================
 
 (define file
   (file->bytes "/Users/leif/demo.h261"))
