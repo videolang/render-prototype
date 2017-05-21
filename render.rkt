@@ -59,7 +59,7 @@
            [(_ #t input ks kf)
             (bit-string-case input
               ([(= number :: bits width) (rest :: binary)]
-               (ks tag rest))
+               (ks (#%datum . tag) rest))
               ...)]
            [(_ #f str)
             (raise-syntax-error "Not done yet")]))]))
@@ -113,6 +113,18 @@
   (32       #b00000011001 11)
   (stuffing #b00000001111 11)
   (start    #b0000000000000001 16))
+(define-vlc-table MTYPE
+  ((intra (TCOEFF)) 1 4)
+  ((intra (MQUANT TCOEFF)) 1 7)
+  ((intra (CBP TCOEFF)) 1 1)
+  ((intra (MQUANT CBP TCOEFF)) 1 5)
+  ((intra MC (MVD)) 1 9)
+  ((intra MC (MVD CBP TCOEFF)) 1 8)
+  ((intra MC (MQUANT MVD CBP TCOEFF)) 1 10)
+  ((intra MC FIL (MVD)) 1 3)
+  ((intra MC FIL (MVD CBP TCOEFF)) 1 2)
+  ((intra MC FIL (MQUANT MVD CBP TCOEFF)) 1 6))
+(define-header MQUANT 5)
 
 ;; ===================================================================================================
 
@@ -141,8 +153,27 @@
     ([(gbsc :: (GBSC))
       (gn :: (GN))
       (gquant :: (GQUANT))
+      (gei :: (GEI))
       (rest :: binary)]
-     (displayln "yay"))))
+     (if (= gei 1)
+         (read-gspare rest)
+         (read-MB rest)))))
+
+(define (read-gspare str)
+  (bit-string-case str
+    ([(gspace :: (GSPARE))
+      (gei :: (GEI))
+      (rest :: binary)]
+     (if (= gei 1)
+         (read-gspare rest)
+         (read-MB rest)))))
+
+(define (read-MB str)
+  (bit-string-case str
+    ([(mba :: (MBA))
+      (mtype :: (MTYPE))
+      (rest :: binary)]
+     (displayln mtype))))
 
 ;; ===================================================================================================
 
