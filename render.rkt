@@ -22,6 +22,8 @@
 
 (require bitsyntax
          racket/file
+         racket/list
+         racket/set
          (for-syntax racket/base
                      racket/syntax
                      syntax/parse))
@@ -114,16 +116,16 @@
   (stuffing #b00000001111 11)
   (start    #b0000000000000001 16))
 (define-vlc-table MTYPE
-  ((intra (TCOEFF)) 1 4)
-  ((intra (MQUANT TCOEFF)) 1 7)
-  ((intra (CBP TCOEFF)) 1 1)
-  ((intra (MQUANT CBP TCOEFF)) 1 5)
-  ((intra MC (MVD)) 1 9)
-  ((intra MC (MVD CBP TCOEFF)) 1 8)
-  ((intra MC (MQUANT MVD CBP TCOEFF)) 1 10)
-  ((intra MC FIL (MVD)) 1 3)
-  ((intra MC FIL (MVD CBP TCOEFF)) 1 2)
-  ((intra MC FIL (MQUANT MVD CBP TCOEFF)) 1 6))
+  (((intra) (TCOEFF)) 1 4)
+  (((intra) (MQUANT TCOEFF)) 1 7)
+  (((intra) (CBP TCOEFF)) 1 1)
+  (((intra) (MQUANT CBP TCOEFF)) 1 5)
+  (((intra MC) (MVD)) 1 9)
+  (((intra MC) (MVD CBP TCOEFF)) 1 8)
+  (((intra MC) (MQUANT MVD CBP TCOEFF)) 1 10)
+  (((intra MC FIL) (MVD)) 1 3)
+  (((intra MC FIL) (MVD CBP TCOEFF)) 1 2)
+  (((intra MC FIL) (MQUANT MVD CBP TCOEFF)) 1 6))
 (define-header MQUANT 5)
 (define-vlc-table MVD
   (16 #b11001 11)
@@ -255,7 +257,7 @@
       (rest :: binary)]
      (if (= gei 1)
          (read-gspare rest)
-         (read-MB rest)))))
+         (read-mb rest)))))
 
 (define (read-gspare str)
   (bit-string-case str
@@ -264,14 +266,25 @@
       (rest :: binary)]
      (if (= gei 1)
          (read-gspare rest)
-         (read-MB rest)))))
+         (read-mb rest)))))
 
-(define (read-MB str)
+(define (read-mb str)
   (bit-string-case str
     ([(mba :: (MBA))
       (mtype :: (MTYPE))
       (rest :: binary)]
-     (displayln mtype))))
+     (define todo (second mtype))
+     (let* ([rest (if (set-member? todo 'MQUANT)
+                      (bit-string-case rest
+                        ([(mquant :: (MQUANT)) (rest :: binary)]
+                         rest))
+                      rest)]
+            [rest (if (set-member? todo 'MVD)
+                      rest ;(read-MVD rest)
+                      rest)]
+            [rest (if (set-member? todo 'CBP) rest #;(read-CBP rest) rest)]
+            [rest (if (set-member? todo 'TCOEFF) rest #;(read rest) rest)])
+       (displayln "yay")))))
 
 ;; ===================================================================================================
 
