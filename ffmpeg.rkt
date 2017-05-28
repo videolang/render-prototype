@@ -32,20 +32,34 @@
    [checksum _ulong]
    [checksum-ptr _pointer]
    [update-checksum _fpointer]
-   [error _int]))
+   [error _int]
+   [read-pause _fpointer]
+   [read-seek _fpointer]))
 
 (define-cstruct _av-io-interrupt-cb
   ([callback _fpointer]
    [opaque _pointer]))
+
+(define _streams
+  (let ()
+    (define-cstruct _streams
+      ([count _uint]
+       [lst _pointer])
+      #:alignment 1)
+  (make-ctype
+   _streams
+   #f
+   (λ (v)
+     (cblock->list (ptr-ref (streams-lst v) _pointer) _pointer (streams-count v))))))
 
 (define-cstruct _avformat-context
   ([av-class _pointer]
    [iformat _pointer]
    [oformat _pointer]
    [priv_data _pointer]
-   [pb _byte-io-context]
-   [nb-streams _uint]
-   [streams _pointer]
+   [pb _pointer]
+   [ctx-flags _int]
+   [streams _streams]
    [filename (_array _byte 1024)]
    [start-time _int64]
    [duration _int64]
@@ -124,3 +138,5 @@
 (av-register-all)
 (define avformat (avformat-open-input testfile #f #f))
 (av-dump-format avformat 0 testfile 0)
+(define strs (avformat-context-streams avformat))
+strs
