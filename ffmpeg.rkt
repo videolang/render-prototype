@@ -15,7 +15,13 @@
 
 (define _avcodec-id _fixint)
 (define _av-duration-estimation-method _fixint)
-(define _av-media-type _fixint)
+(define _avmedia-type (_enum '(unknown = -1
+                               video
+                               audio
+                               data
+                               subtitle
+                               attachment
+                               nb)))
 (define _avpixel-format _fixint)
 (define _avcolor-primaries _fixint)
 (define _avcolor-transfer-characteristic _fixint)
@@ -26,7 +32,6 @@
 (define _avsample-format _fixint)
 (define _avaudio-service-type _fixint)
 (define _avdiscard _fixint)
-(define _avmedia-type _fixint)
 
 (define-cstruct _byte-io-context
   ([buffer _bytes]
@@ -54,17 +59,10 @@
   ([callback _fpointer]
    [opaque _pointer]))
 
-(define _streams
-  (let ()
-    (define-cstruct _streams
-      ([count _uint]
-       [lst _pointer])
-      #:alignment 1)
-  (make-ctype
-   _streams
-   #f
-   (λ (v)
-     (cblock->list (ptr-ref (streams-lst v) _pointer) _pointer (streams-count v))))))
+(define (avformat-context-streams v)
+  (cblock->list (avformat-context-streams-data v)
+                _avstream-pointer
+                (avformat-context-streams-nb v)))
 
 (define-cstruct _avformat-context
   ([av-class _pointer]
@@ -73,7 +71,8 @@
    [priv_data _pointer]
    [pb _pointer]
    [ctx-flags _int]
-   [streams _streams]
+   [streams-nb _uint]
+   [streams-data _pointer]
    [filename (_array _byte 1024)]
    [start-time _int64]
    [duration _int64]
@@ -140,9 +139,25 @@
   ([num _int]
    [den _int]))
 
+(define-cstruct _avpacket
+  ([buf _pointer]
+   [pts _int64]
+   [dts _int64]
+   [data _pointer]
+   [size _int]
+   [stream-index _int]
+   [flags _int]
+   [side-data _pointer]
+   [side-data-elems _int]
+   [duration _int]
+   [destruct _fpointer]
+   [priv _pointer]
+   [pos _int64]
+   [convergence-duration _int64]))
+
 (define-cstruct _avcodec-context
   ([av-class _pointer]
-   [long-level-offset _int]
+   [log-level-offset _int]
    [codec-type* _avmedia-type]
    [codec _pointer]
    [codec-name (_array _byte 32)]
@@ -345,6 +360,23 @@
    [sub-text-format _int]
    [trailling-padding _int]))
 
+(define-cstruct _avstream
+  ([index _int]
+   [id _int]
+   [codec _avcodec-context-pointer]
+   [priv-data _pointer]
+   [time-base _avrational]
+   [start-time _int64]
+   [duration _int64]
+   [nb-frames _int64]
+   [disposition _int]
+   [discard _avdiscard]
+   [sample-aspect-ratio _avrational]
+   [metadata _pointer]
+   [avg-frame-rate _pointer]
+   [attached-pic _avpacket]
+   [rest _int])) ;; AKA, BAD and too short!!! XXX
+
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
                                            _path
@@ -354,12 +386,21 @@
                                            -> (let ()
                                                 (when r (error "NOO"))
                                                 out)))
+(define-avformat avformat-find-stream-info (_fun _avformat-context-pointer _pointer
+                                                 -> [r : _int]
+                                                 -> (let ()
+                                                      (when (< r 0) (error "NOO2"))
+                                                      (void))))
 (define-avformat av-dump-format (_fun _avformat-context-pointer _int _path _int
                                       -> _void))
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
 (define avformat (avformat-open-input testfile #f #f))
+(avformat-find-stream-info avformat #f)
 (av-dump-format avformat 0 testfile 0)
 (define strs (avformat-context-streams avformat))
-strs
+(for ([i strs])
+  (define c (avstream-codec i))
+  (displayln c)
+  (displayln (avcodec-context-codec-type* c)))
