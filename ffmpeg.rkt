@@ -426,6 +426,38 @@
    [recommended-encoder-configuration _bytes]
    [display-aspect-ration _avrational]))
 
+(define-cstruct _avcodec
+  ([name _bytes]
+   [long-name _bytes]
+   [type _avmedia-type]
+   [id _avcodec-id]
+   [capabilities _int]
+   [supported-framerates _pointer]
+   [pix-fmts _pointer]
+   [supported-samplerates _pointer]
+   [sample-fmts _pointer]
+   [channel-layouts _pointer]
+   [max-lowres _uint8]
+   [priv-class _pointer]
+   [profiles _pointer]
+   [priv-data-size _int]
+   [next _pointer]
+   [defaults _pointer]
+   [init-static-data _fpointer]
+   [init _fpointer]
+   [encode-sub _fpointer]
+   [encode2 _fpointer]
+   [decode _fpointer]
+   [close _fpointer]
+   [send-frame _fpointer]
+   [send-packet _fpointer]
+   [receive-frame _fpointer]
+   [receive-packet _fpointer]
+   [flush _fpointer]
+   [caps-internal _int]
+   [init-thread-copy _fpointer]
+   [update-thread-context _fpointer]))
+
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
                                            _path
