@@ -514,6 +514,10 @@
 (define-cpointer-type _av-frame-pointer)
 (define-cpointer-type _sws-context-pointer)
 
+(define-cstruct _avpicture
+  ([data (_array _pointer AV-NUM-DATA-POINTERS)]
+   [linesize (_array _int AV-NUM-DATA-POINTERS)]))
+
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
                                            _path
@@ -562,7 +566,16 @@
   (define-avutil av-malloc (_fun _size -> (_array type size)))
   (av-malloc (* size (ctype-sizeof type))))
 
-;(define-avutil avpicture-fill (_fun _avpicture-poitner
+(define-avcodec avpicture-fill (_fun _avpicture-pointer
+                                    _pointer ;; XX FIXME
+                                    _avpixel-format
+                                    _int
+                                    _int
+                                    -> [ret : _int]
+                                    -> (let ()
+                                         (when (< ret 0)
+                                           (error "avpicture"))
+                                         ret)))
                                     
 (define-swscale sws-getContext (_fun _int
                                       _int
@@ -594,13 +607,18 @@
 (define new-ctx (avcodec-copy-context codec codec-ctx))
 (avcodec-open2 new-ctx codec #f)
 (define frame (av-frame-alloc))
-(define frame-rbg (av-frame-alloc))
+(define frame-rgb (av-frame-alloc))
 (define num-bytes (av-image-get-buffer-size 'rgb24
                                             (avcodec-context-width new-ctx)
                                             (avcodec-context-height new-ctx)
                                             32))
 (define buff (av-malloc num-bytes _uint8))
-#;
+(avpicture-fill (cast frame-rgb _av-frame-pointer _avpicture-pointer)
+                (array-ptr buff)
+                'rgb24
+                (avcodec-context-width new-ctx)
+                (avcodec-context-height new-ctx))
+
 (define sws
   (sws-getContext (avcodec-context-width new-ctx)
                   (avcodec-context-height new-ctx)
