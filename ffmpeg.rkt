@@ -199,8 +199,13 @@
   ([num _int]
    [den _int]))
 
+(define-cstruct _avbuffer-ref
+  ([buffer _pointer]
+   [data _pointer]
+   [size _int]))
+
 (define-cstruct _avpacket
-  ([buf _pointer]
+  ([buf _avbuffer-ref-pointer/null]
    [pts _int64]
    [dts _int64]
    [data _pointer]
@@ -509,8 +514,8 @@
    [decode _fpointer]
    [close _fpointer]
    [send-frame _fpointer]
-   [send-packet _fpointer]
-   [receive-frame _fpointer]
+   [send-packet* _fpointer]
+   [receive-frame* _fpointer]
    [receive-packet _fpointer]
    [flush _fpointer]
    [caps-internal _int]
@@ -542,11 +547,21 @@
                                                       (void))))
 (define-avformat av-dump-format (_fun _avformat-context-pointer _int _path _int
                                       -> _void))
-(define-avformat av-read-frame (_fun _avformat-context-pointer
-                                     _avpacket-pointer
-                                     -> [ret : _int]
-                                     -> (when (< ret 0)
-                                          (error "maybe eof"))))
+(define (av-read-frame ctx [frame #f])
+  (define-avformat av-read-frame (_fun _avformat-context-pointer
+                                       [out : _avpacket-pointer]
+                                       -> [ret : _int]
+                                       -> (cond
+                                            [(< ret 0)
+                                             (unless frame
+                                               (av-packet-unref out))
+                                             #f]
+                                            [else out])))
+  (define frame* (or frame
+                     (ptr-ref (malloc _avpacket) _avpacket)))
+  (av-read-frame ctx frame*))
+(define-avformat av-packet-unref (_fun _avpacket-pointer
+                                       -> _void))
 
 (define-avcodec avcodec-find-decoder (_fun _avcodec-id
                                            -> _avcodec-pointer))
@@ -566,24 +581,25 @@
                                     -> (when ret
                                          (error "Sigh"))))
 (define-avcodec avpicture-fill (_fun _avpicture-pointer
-                                    _pointer ;; XX FIXME
-                                    _avpixel-format
-                                    _int
-                                    _int
-                                    -> [ret : _int]
-                                    -> (let ()
-                                         (when (< ret 0)
-                                           (error "avpicture"))
-                                         ret)))
-(define-avcodec avcodec-decode-video2 (_fun _avcodec-context-pointer
+                                     _pointer ;; XX FIXME
+                                     _avpixel-format
+                                     _int
+                                     _int
+                                     -> [ret : _int]
+                                     -> (let ()
+                                          (when (< ret 0)
+                                            (error "avpicture"))
+                                          ret)))
+(define-avcodec avcodec-send-packet (_fun _avcodec-context-pointer
+                                          (_ptr i _avpacket)
+                                          -> [ret : _int]
+                                          -> (unless (= ret 0)
+                                               (error "FOO"))))
+(define-avcodec avcodec-receive-frame (_fun _avcodec-context-pointer
                                             _av-frame-pointer
-                                            _pointer
-                                            _avpacket-pointer
                                             -> [ret : _int]
-                                            -> (let ()
-                                                 (when (< ret 0)
-                                                   (error "decode"))
-                                                 ret)))
+                                            -> (when (< ret 0)
+                                                 (error "SIGH"))))
 
 (define-avutil av-frame-alloc (_fun -> _av-frame-pointer))
 (define-avutil av-image-get-buffer-size (_fun _avpixel-format _int _int _int
@@ -629,13 +645,16 @@
 (avformat-find-stream-info avformat #f)
 (av-dump-format avformat 0 testfile 0)
 (define strs (avformat-context-streams avformat))
-(define codec-ctx
-  (for/fold ([codec #f])
-            ([i strs])
+(define-values (codec-ctx codec-index)
+  (for/fold ([codec #f]
+             [index #f])
+            ([i strs]
+             [i* (in-naturals)])
     (define c (avstream-codec i))
-    (or codec
+    (if codec
+        (values codec index)
         (and (equal? (avcodec-context-codec-type* c) 'video)
-             c))))
+             (values c i*)))))
 (define codec-id (avcodec-context-codec-id codec-ctx))
 (define codec (avcodec-find-decoder codec-id))
 (define new-ctx (avcodec-copy-context codec codec-ctx))
@@ -652,7 +671,6 @@
                 'rgb24
                 (avcodec-context-width new-ctx)
                 (avcodec-context-height new-ctx))
-
 (define sws
   (sws-getContext (avcodec-context-width new-ctx)
                   (avcodec-context-height new-ctx)
@@ -662,3 +680,13 @@
                   'rgb24
                   SWS-BILINEAR
                   #f #f #f))
+(define packet (av-read-frame avformat))
+(let loop ([data packet])
+  (when data
+    (when (= (avpacket-stream-index data) codec-index)
+        ;(avcodec-send-packet avformat ...)
+        ;(avcodec-receive-frame avformat ...)
+      (void)) ; <--- Remove void
+    (loop (av-read-frame avformat data))))
+(when packet
+  (av-packet-unref packet))
