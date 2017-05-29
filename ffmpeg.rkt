@@ -17,10 +17,14 @@
 (define-ffi-definer define-swscale swscale-lib
   #:make-c-id convention:hyphen->underscore)
 
+;; ===================================================================================================
+
 (define AV-NUM-DATA-POINTERS 8)
 (define MAX-REORDER-DELAY 16)
 
 (define SWS-BILINEAR 2)
+
+;; ===================================================================================================
 
 (define _avcodec-id (_enum '(none
                              mpeg1video
@@ -86,6 +90,8 @@
 (define _avaudio-service-type _fixint)
 (define _avdiscard _fixint)
 (define _avstream-parse-type _fixint)
+
+;; ===================================================================================================
 
 (define-cstruct _byte-io-context
   ([buffer _bytes]
@@ -203,7 +209,7 @@
    [flags _int]
    [side-data _pointer]
    [side-data-elems _int]
-   [duration _int]
+   [durration _int]
    [destruct _fpointer]
    [priv _pointer]
    [pos _int64]
@@ -518,6 +524,8 @@
   ([data (_array _pointer AV-NUM-DATA-POINTERS)]
    [linesize (_array _int AV-NUM-DATA-POINTERS)]))
 
+;; ===================================================================================================
+
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
                                            _path
@@ -534,6 +542,12 @@
                                                       (void))))
 (define-avformat av-dump-format (_fun _avformat-context-pointer _int _path _int
                                       -> _void))
+(define-avformat av-read-frame (_fun _avformat-context-pointer
+                                     _avpacket-pointer
+                                     -> [ret : _int]
+                                     -> (when (< ret 0)
+                                          (error "maybe eof"))))
+
 (define-avcodec avcodec-find-decoder (_fun _avcodec-id
                                            -> _avcodec-pointer))
 (define-avcodec avcodec-alloc-context3 (_fun _avcodec-pointer/null
@@ -551,6 +565,26 @@
                                     -> [ret : _bool]
                                     -> (when ret
                                          (error "Sigh"))))
+(define-avcodec avpicture-fill (_fun _avpicture-pointer
+                                    _pointer ;; XX FIXME
+                                    _avpixel-format
+                                    _int
+                                    _int
+                                    -> [ret : _int]
+                                    -> (let ()
+                                         (when (< ret 0)
+                                           (error "avpicture"))
+                                         ret)))
+(define-avcodec avcodec-decode-video2 (_fun _avcodec-context-pointer
+                                            _av-frame-pointer
+                                            _pointer
+                                            _avpacket-pointer
+                                            -> [ret : _int]
+                                            -> (let ()
+                                                 (when (< ret 0)
+                                                   (error "decode"))
+                                                 ret)))
+
 (define-avutil av-frame-alloc (_fun -> _av-frame-pointer))
 (define-avutil av-image-get-buffer-size (_fun _avpixel-format _int _int _int
                                               -> _int))
@@ -566,28 +600,28 @@
   (define-avutil av-malloc (_fun _size -> (_array type size)))
   (av-malloc (* size (ctype-sizeof type))))
 
-(define-avcodec avpicture-fill (_fun _avpicture-pointer
-                                    _pointer ;; XX FIXME
-                                    _avpixel-format
-                                    _int
-                                    _int
-                                    -> [ret : _int]
-                                    -> (let ()
-                                         (when (< ret 0)
-                                           (error "avpicture"))
-                                         ret)))
-                                    
 (define-swscale sws-getContext (_fun _int
-                                      _int
-                                      _avpixel-format
-                                      _int
-                                      _int
-                                      _avpixel-format
-                                      _int
-                                      _pointer
-                                      _pointer
-                                      _pointer
-                                      -> _sws-context-pointer))
+                                     _int
+                                     _avpixel-format
+                                     _int
+                                     _int
+                                     _avpixel-format
+                                     _int
+                                     _pointer
+                                     _pointer
+                                     _pointer
+                                     -> _sws-context-pointer))
+(define-swscale sws-scale (_fun _sws-context-pointer
+                                _pointer
+                                _pointer
+                                _int
+                                _int
+                                _pointer
+                                _pointer
+                                -> _int))
+
+;; ===================================================================================================
+
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
