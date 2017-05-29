@@ -12,6 +12,7 @@
   #:make-c-id convention:hyphen->underscore)
 
 (define AV-NUM-DATA-POINTERS 8)
+(define MAX-REORDER-DELAY 16)
 
 (define _avcodec-id _fixint)
 (define _av-duration-estimation-method _fixint)
@@ -32,6 +33,7 @@
 (define _avsample-format _fixint)
 (define _avaudio-service-type _fixint)
 (define _avdiscard _fixint)
+(define _avstream-parse-type _fixint)
 
 (define-cstruct _byte-io-context
   ([buffer _bytes]
@@ -360,6 +362,12 @@
    [sub-text-format _int]
    [trailling-padding _int]))
 
+(define-cstruct _avprobe-data
+  ([filename _bytes]
+   [buf _pointer]
+   [buf-size _int]
+   [mime-type _bytes]))
+
 (define-cstruct _avstream
   ([index _int]
    [id _int]
@@ -375,7 +383,48 @@
    [metadata _pointer]
    [avg-frame-rate _pointer]
    [attached-pic _avpacket]
-   [rest _int])) ;; AKA, BAD and too short!!! XXX
+   [side-data _pointer]
+   [nb-side-data _int]
+   [event-flags _int]
+   [info _pointer]
+   [pts-wrap-bits _int]
+   [first-dts _int64]
+   [cur-dts _int64]
+   [last-ip-pts _int64]
+   [last-ip-duration _int]
+   [probe-packets _int]
+   [codec-info-nb-frames _int]
+   [need-parsing _avstream-parse-type]
+   [parser _pointer]
+   [last-in-packet-buffer _pointer]
+   [probe-data _avprobe-data]
+   [pts-buffer (_array _int64 (add1 MAX-REORDER-DELAY))]
+   [index-enteries _pointer]
+   [nb-index-enteries _int]
+   [index-enteries-allocated-size _uint]
+   [r-frame-rate _avrational]
+   [stream-identifier _int]
+   [interleaver-chunk-size _int64]
+   [interleaver-chunk-duration _int64]
+   [request-probe _int]
+   [skip-to-keyframe _int]
+   [skip-samples _int]
+   [start-skip-samples _int64]
+   [first-discard-sample _int64]
+   [last-discard-sample _int64]
+   [nb-decode-frames _int]
+   [mux-ts-offset _int64]
+   [pts-wrap-reference _int64]
+   [pts-wrap-behavior _int]
+   [update-initial-durations-done _int]
+   [pts-reorder-error (_array _int64 (add1 MAX-REORDER-DELAY))]
+   [pts-reorder-error-count (_array _uint8 (add1 MAX-REORDER-DELAY))]
+   [last-dts-for-order-check _int64]
+   [dts-ordered _uint8]
+   [dts-misordered _uint8]
+   [inject-global-side-data _int]
+   [recommended-encoder-configuration _bytes]
+   [display-aspect-ration _avrational]))
 
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
