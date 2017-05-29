@@ -14,7 +14,37 @@
 (define AV-NUM-DATA-POINTERS 8)
 (define MAX-REORDER-DELAY 16)
 
-(define _avcodec-id _fixint)
+(define _avcodec-id (_enum '(none
+                             mpeg1video
+                             mpeg2video
+                             mpeg2video-xvmc ; Depricated and might be removed
+                             h261
+                             h263
+                             rv10
+                             rv20
+                             mjpeg
+                             mjpegb
+                             ljpeg
+                             sp5x
+                             jpegls
+                             mpeg4
+                             rawvideo
+                             msmpeg4v1
+                             msmpeg4v2
+                             msmpeg4v3
+                             wmv1
+                             wmv2
+                             h263p
+                             h263i
+                             flv1
+                             svq1
+                             svq3
+                             dvvideo
+                             huffyuv
+                             cyuv
+                             h264
+                             indeo3
+                             ))) ;; XXX AND MORE! :)
 (define _av-duration-estimation-method _fixint)
 (define _avmedia-type (_enum '(unknown = -1
                                video
@@ -474,6 +504,25 @@
                                                       (void))))
 (define-avformat av-dump-format (_fun _avformat-context-pointer _int _path _int
                                       -> _void))
+(define-avcodec avcodec-find-decoder (_fun _avcodec-id
+                                           -> _avcodec-pointer))
+(define-avcodec avcodec-alloc-context3 (_fun _avcodec-pointer/null
+                                             -> _avcodec-context-pointer))
+(define-avcodec avcodec-copy-context (_fun [codec : _?]
+                                           [out : _avcodec-context-pointer
+                                                = (avcodec-alloc-context3 codec)]
+                                           _avcodec-context-pointer
+                                           -> [ret : _bool]
+                                           -> (let ()
+                                                (when ret
+                                                  (error "NO3"))
+                                                out)))
+(define-avcodec avcodec-open2 (_fun _avcodec-context-pointer _avcodec-pointer _pointer
+                                    -> [ret : _bool]
+                                    -> (when ret
+                                         (error "Sigh"))))
+                                    
+                                                
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
@@ -481,7 +530,14 @@
 (avformat-find-stream-info avformat #f)
 (av-dump-format avformat 0 testfile 0)
 (define strs (avformat-context-streams avformat))
-(for ([i strs])
-  (define c (avstream-codec i))
-  (displayln c)
-  (displayln (avcodec-context-codec-type* c)))
+(define codec-ctx
+  (for/fold ([codec #f])
+            ([i strs])
+    (define c (avstream-codec i))
+    (or codec
+        (and (equal? (avcodec-context-codec-type* c) 'video)
+             c))))
+(define codec-id (avcodec-context-codec-id codec-ctx))
+(define codec (avcodec-find-decoder codec-id))
+(define new-ctx (avcodec-copy-context codec codec-ctx))
+(avcodec-open2 new-ctx codec #f)
