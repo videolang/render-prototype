@@ -550,6 +550,20 @@
 (define-avutil av-frame-alloc (_fun -> _av-frame-pointer))
 (define-avutil av-image-get-buffer-size (_fun _avpixel-format _int _int _int
                                               -> _int))
+(define (av-malloc [a #f] [b #f])
+  (define type (cond
+                 [(ctype? a) a]
+                 [(ctype? b) b]
+                 [else _byte]))
+  (define size (cond
+                 [(integer? a) a]
+                 [(integer? b) b]
+                 [else 1]))
+  (define-avutil av-malloc (_fun _size -> (_array type size)))
+  (av-malloc (* size (ctype-sizeof type))))
+
+;(define-avutil avpicture-fill (_fun _avpicture-poitner
+                                    
 (define-swscale sws-getContext (_fun _int
                                       _int
                                       _avpixel-format
@@ -585,6 +599,7 @@
                                             (avcodec-context-width new-ctx)
                                             (avcodec-context-height new-ctx)
                                             32))
+(define buff (av-malloc num-bytes _uint8))
 #;
 (define sws
   (sws-getContext (avcodec-context-width new-ctx)
