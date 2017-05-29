@@ -10,9 +10,17 @@
 (define avformat-lib (ffi-lib "libavformat"))
 (define-ffi-definer define-avformat avformat-lib
   #:make-c-id convention:hyphen->underscore)
+(define avutil-lib (ffi-lib "libavutil"))
+(define-ffi-definer define-avutil avutil-lib
+  #:make-c-id convention:hyphen->underscore)
+(define swscale-lib (ffi-lib "libswscale"))
+(define-ffi-definer define-swscale swscale-lib
+  #:make-c-id convention:hyphen->underscore)
 
 (define AV-NUM-DATA-POINTERS 8)
 (define MAX-REORDER-DELAY 16)
+
+(define SWS-BILINEAR 2)
 
 (define _avcodec-id (_enum '(none
                              mpeg1video
@@ -53,8 +61,22 @@
                                subtitle
                                attachment
                                nb)))
-(define _avpixel-format _fixint)
 (define _avcolor-primaries _fixint)
+(define _avpixel-format (_enum '(unknown = -1
+                                 yuv420p
+                                 yuyv422
+                                 rgb24
+                                 bgr24
+                                 yuv422p
+                                 yuv444p
+                                 yuv410p
+                                 yuv411p
+                                 gray8
+                                 monowhite
+                                 monoblack
+                                 pal8
+                                 yuvj420p
+                                 ))) ;; XXX And more! :)
 (define _avcolor-transfer-characteristic _fixint)
 (define _avcolor-space _fixint)
 (define _avcolor-range _fixint)
@@ -206,6 +228,7 @@
    [flags _int]
    [flags2 _int]
    [extradata _pointer]
+   [extradata-size _int]
    [time-base _avrational]
    [ticks-per-frame _int]
    [delay _int]
@@ -488,6 +511,9 @@
    [init-thread-copy _fpointer]
    [update-thread-context _fpointer]))
 
+(define-cpointer-type _av-frame-pointer)
+(define-cpointer-type _sws-context-pointer)
+
 (define-avformat av-register-all (_fun -> _void))
 (define-avformat avformat-open-input (_fun (out : (_ptr io _avformat-context-pointer/null) = #f)
                                            _path
@@ -521,8 +547,20 @@
                                     -> [ret : _bool]
                                     -> (when ret
                                          (error "Sigh"))))
-                                    
-                                                
+(define-avutil av-frame-alloc (_fun -> _av-frame-pointer))
+(define-avutil av-image-get-buffer-size (_fun _avpixel-format _int _int _int
+                                              -> _int))
+(define-swscale sws-getContext (_fun _int
+                                      _int
+                                      _avpixel-format
+                                      _int
+                                      _int
+                                      _avpixel-format
+                                      _int
+                                      _pointer
+                                      _pointer
+                                      _pointer
+                                      -> _sws-context-pointer))
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
@@ -541,3 +579,19 @@
 (define codec (avcodec-find-decoder codec-id))
 (define new-ctx (avcodec-copy-context codec codec-ctx))
 (avcodec-open2 new-ctx codec #f)
+(define frame (av-frame-alloc))
+(define frame-rbg (av-frame-alloc))
+(define num-bytes (av-image-get-buffer-size 'rgb24
+                                            (avcodec-context-width new-ctx)
+                                            (avcodec-context-height new-ctx)
+                                            32))
+#;
+(define sws
+  (sws-getContext (avcodec-context-width new-ctx)
+                  (avcodec-context-height new-ctx)
+                  (avcodec-context-pix-fmt new-ctx)
+                  (avcodec-context-width new-ctx)
+                  (avcodec-context-height new-ctx)
+                  'rgb24
+                  SWS-BILINEAR
+                  #f #f #f))
