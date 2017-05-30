@@ -19,10 +19,31 @@
 
 ;; ===================================================================================================
 
+(define (convert-err err)
+  (bytes->string/locale (integer->integer-bytes (abs err) 4 #t)))
+
+(define (MK-TAG [a #\space] [b #\space] [c #\space] [d #\space])
+  (integer-bytes->integer (bytes (char->integer a)
+                                 (char->integer b)
+                                 (char->integer c)
+                                 (char->integer d))
+                          #t))
+
+(define (FFERRTAG [a #\space] [b #\space] [c #\space] [d #\space])
+  (- (MK-TAG a b c d)))
+
+(define AVERROR-EOF (FFERRTAG #\E #\O #\F))
 (define AV-NUM-DATA-POINTERS 8)
 (define MAX-REORDER-DELAY 16)
+(define EAGAIN 35)
 
 (define SWS-BILINEAR 2)
+
+;; ===================================================================================================
+
+(struct exn:ffmpeg exn ())
+(struct exn:ffmpeg:again exn:ffmpeg ())
+(struct exn:ffmpeg:eof exn:ffmpeg ())
 
 ;; ===================================================================================================
 
@@ -90,6 +111,7 @@
 (define _avaudio-service-type _fixint)
 (define _avdiscard _fixint)
 (define _avstream-parse-type _fixint)
+(define _avpicture-type _fixint)
 
 ;; ===================================================================================================
 
@@ -522,7 +544,68 @@
    [init-thread-copy _fpointer]
    [update-thread-context _fpointer]))
 
-(define-cpointer-type _av-frame-pointer)
+(define-cstruct _av-frame
+  ([data (_array _pointer AV-NUM-DATA-POINTERS)]
+   [linesize (_array _pointer AV-NUM-DATA-POINTERS)]
+   [extended-data _pointer]
+   [width _int]
+   [height _int]
+   [nb-samples _int]
+   [format _int]
+   [key-frame _bool]
+   [pict-type _avpicture-type]
+   [base (_array _pointer AV-NUM-DATA-POINTERS)]
+   [sample-aspect-ration _avrational]
+   [pts _int64]
+   [pkt-pts _int64]
+   [pkt-dts _int64]
+   [coded-picture-number _int]
+   [display-picture-number _int]
+   [quality _int]
+   [reference _int]
+   [qscale-table _pointer]
+   [qstride _int]
+   [qscale-type* _int]
+   [mbskip-table _pointer]
+   [motion-val _fpointer]
+   [mb-type _pointer]
+   [dct-coeff _pointer]
+   [ref-index (_array _pointer 2)]
+   [opaque _pointer]
+   [error (_array _uint64 AV-NUM-DATA-POINTERS)]
+   [type _int]
+   [repeat_pict _int]
+   [interlaced-frame _int]
+   [top-field-first _int]
+   [palette-has-changed _int]
+   [buffer-hints _int]
+   [pan-scan _pointer]
+   [reordered-opaque _int64]
+   [hwaccel-picture-private _pointer]
+   [owner _pointer]
+   [thread-opaque _pointer]
+   [motion-subsample-log2 _uint8]
+   [sample-rate _int]
+   [channel-layout _uint64]
+   [buf (_array _pointer AV-NUM-DATA-POINTERS)]
+   [extended-buf _pointer]
+   [nb-extended-buf _int]
+   [side-data _pointer]
+   [nb-side-data _int]
+   [flags _int]
+   [color-range _avcolor-range]
+   [color-primitives _avcolor-primaries]
+   [color-trc _avcolor-transfer-characteristic]
+   [colorspace _avcolor-space]
+   [chroma-location _avchroma-location]
+   [best-effort-timestamp _int64]
+   [pkt-pos _int64]
+   [pkt-duration _int64]
+   [metadata _pointer]
+   [decode-error-flags _int]
+   [channels _int]
+   [pkt-size _int]
+   [qp-table-buf _int]))
 (define-cpointer-type _sws-context-pointer)
 
 (define-cstruct _avpicture
@@ -598,8 +681,14 @@
 (define-avcodec avcodec-receive-frame (_fun _avcodec-context-pointer
                                             _av-frame-pointer
                                             -> [ret : _int]
-                                            -> (when (< ret 0)
-                                                 (error "SIGH"))))
+                                            -> (cond
+                                                 [(= ret 0) (void)]
+                                                 [(= (- ret) EAGAIN)
+                                                  (raise (exn:ffmpeg:again
+                                                          "recev-frame"
+                                                          (current-continuation-marks)))]
+                                                 [(= ret AVERROR-EOF) eof]
+                                                 [else (error 'recev "Error: ~a" (- ret))])))
 
 (define-avutil av-frame-alloc (_fun -> _av-frame-pointer))
 (define-avutil av-image-get-buffer-size (_fun _avpixel-format _int _int _int
@@ -681,12 +770,19 @@
                   SWS-BILINEAR
                   #f #f #f))
 (define packet (av-read-frame avformat))
-(let loop ([data packet])
-  (when data
+(let loop ([data packet]
+           [count 0])
+  (when (and data (<= count 10))
+    (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
-        ;(avcodec-send-packet avformat ...)
-        ;(avcodec-receive-frame avformat ...)
-      (void)) ; <--- Remove void
-    (loop (av-read-frame avformat data))))
+      (with-handlers ([exn:ffmpeg:again? void]
+                      [exn:ffmpeg:eof? void])
+        (avcodec-send-packet new-ctx data)
+        (avcodec-receive-frame new-ctx frame)
+        (set! count-inc 1)
+        ;(sws-scale sws (avframe-data frame
+        ))
+    (displayln count)
+    (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
