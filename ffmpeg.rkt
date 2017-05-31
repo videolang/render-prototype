@@ -2,7 +2,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/define
-         ffi/unsafe/define/conventions
+         ;ffi/unsafe/define/conventions
          video/private/ffmpeg)
 
 (define testfile "/Users/leif/demo2.mp4")
@@ -57,9 +57,17 @@
         (avcodec-send-packet new-ctx data)
         (avcodec-receive-frame new-ctx frame)
         (set! count-inc 1)
-        ;(sws-scale sws (avframe-data frame
+        (sws-scale sws
+                   (array-ptr (av-frame-data frame))
+                   (array-ptr (av-frame-linesize frame))
+                   0
+                   (avcodec-context-height new-ctx)
+                   (array-ptr (av-frame-data frame-rgb))
+                   (array-ptr (av-frame-linesize frame-rgb)))
+        (displayln (cblock->vector (array-ref (av-frame-data frame-rgb) 0) _uint8 (* 3 (avcodec-context-width new-ctx))))
+        ;(displayln (array-ref (av-frame-linesize frame-rgb) 0))
+        (newline)
         ))
-    (displayln count)
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
