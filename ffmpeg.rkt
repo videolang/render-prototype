@@ -1,9 +1,16 @@
-#lang racket
+#lang racket/gui
 
 (require ffi/unsafe
          ffi/unsafe/define
          ;ffi/unsafe/define/conventions
+         data/gvector
          video/private/ffmpeg)
+
+(define f (new frame% [label "Movie"]))
+(define c (new canvas%
+               [parent f]
+               [style '(gl no-autoclear)]))
+(send f show #t)
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
@@ -47,9 +54,11 @@
                   SWS-BILINEAR
                   #f #f #f))
 (define packet (av-read-frame avformat))
+(define film (make-gvector #:capacity 10000))
 (let loop ([data packet]
            [count 0])
-  (when (and data (<= count 10))
+  (when (and data (<= count 100))
+    (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
       (with-handlers ([exn:ffmpeg:again? void]
@@ -64,10 +73,16 @@
                    (avcodec-context-height new-ctx)
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
-        (displayln (cblock->vector (array-ref (av-frame-data frame-rgb) 0) _uint8 (* 3 (avcodec-context-width new-ctx))))
-        ;(displayln (array-ref (av-frame-linesize frame-rgb) 0))
-        (newline)
-        ))
+        (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
+        (define fbuff
+          (for/vector ([i (in-range (avcodec-context-height new-ctx))])
+            (cblock->vector (ptr-add (array-ref (av-frame-data frame-rgb) 0)
+                                     (* i linesize))
+                            _uint8
+                            (* 3 (avcodec-context-width new-ctx)))))
+        (send c with-gl-context
+              (λ () (displayln "hola")))
+        (gvector-add! film fbuff)))
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
