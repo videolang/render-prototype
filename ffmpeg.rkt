@@ -1,17 +1,88 @@
-#lang racket/gui
+#lang at-exp racket/gui
 
 (require ffi/unsafe
          ffi/unsafe/define
+         ffi/vector
          ;ffi/unsafe/define/conventions
          data/gvector
+         opengl
+         opengl/util
          video/private/ffmpeg)
 
-(define f (new frame% [label "Movie"]))
+(define tri
+  (f32vector -1.0 -1.0 0.0
+              1.0 -1.0 0.0
+              0.0 1.0 0.0))
+(define vert
+  @~a{
+ #version 330 core
+ layout(location = 0) in vec3 vertexPosition_modelspace;
+ int main(){
+  gl_Position.xyz = vertexPosition_modelspace;
+  gl_Position.w = 1.0;
+ }})
+(define frag
+  @~a{
+ #version 330 core
+ out vec3 color;
+ void main(){
+  color = vec3(1,0,0);
+ }})
+
+(define glconf (new gl-config%))
+(send glconf set-legacy? #f)
+
+(define f (new frame%
+               [label "Movie"]
+               [width 500]
+               [height 500]))
 (define c (new canvas%
                [parent f]
+               [gl-config glconf]
+               [min-width 500]
+               [min-height 500]
                [style '(gl no-autoclear)]))
+(define buff #f)
+(define prog #f)
+(send c with-gl-context
+      (λ ()
+        (define arr (glGenVertexArrays 1))
+        (glBindVertexArray (u32vector-ref arr 0))
+        (set! buff (glGenBuffers 1))
+        (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref buff 0))
+        (glBufferData GL_ARRAY_BUFFER
+                      (* (compiler-sizeof 'float) (f32vector-length tri))
+                      tri
+                      GL_STATIC_DRAW)
+        (define v-shad (glCreateShader GL_VERTEX_SHADER))
+        (define f-shad (glCreateShader GL_FRAGMENT_SHADER))
+        (glShaderSource v-shad 1 (vector vert) (s32vector (string-length vert)))
+        (glCompileShader v-shad)
+        (glShaderSource f-shad 1 (vector frag) (s32vector (string-length frag)))
+        (glCompileShader f-shad)
+        (set! prog (glCreateProgram))
+        (glAttachShader prog v-shad)
+        (glAttachShader prog f-shad)
+        (glLinkProgram prog)
+        (glDetachShader prog v-shad)
+        (glDetachShader prog f-shad)
+        (glDeleteShader v-shad)
+        (glDeleteShader f-shad)
+        ))
 (send f show #t)
 
+(let loop ()
+  (send c with-gl-context
+        (λ ()
+          (glEnableVertexAttribArray 0)
+          (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref buff 0))
+          (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
+          (glDrawArrays GL_TRIANGLES 0 3)
+          (glDisableVertexAttribArray 0)
+          ))
+  (loop))
+
+#|
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
 (define avformat (avformat-open-input testfile #f #f))
@@ -86,3 +157,4 @@
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
+|#
