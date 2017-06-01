@@ -17,7 +17,7 @@
   @~a{
  #version 330 core
  layout(location = 0) in vec3 vertexPosition_modelspace;
- int main(){
+ void main(){
   gl_Position.xyz = vertexPosition_modelspace;
   gl_Position.w = 1.0;
  }})
@@ -58,6 +58,7 @@
         (define f-shad (glCreateShader GL_FRAGMENT_SHADER))
         (glShaderSource v-shad 1 (vector vert) (s32vector (string-length vert)))
         (glCompileShader v-shad)
+        (define-values (a b) (glGetShaderInfoLog v-shad (glGetShaderiv v-shad GL_INFO_LOG_LENGTH)))
         (glShaderSource f-shad 1 (vector frag) (s32vector (string-length frag)))
         (glCompileShader f-shad)
         (set! prog (glCreateProgram))
@@ -68,18 +69,24 @@
         (glDetachShader prog f-shad)
         (glDeleteShader v-shad)
         (glDeleteShader f-shad)
+        (glUseProgram prog)
+        (glViewport 0 0 500 500)
+        (glClearColor 0.0 0.0 0.0 0.0)
         ))
 (send f show #t)
 
 (let loop ()
   (send c with-gl-context
         (λ ()
+          (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
+          (glUseProgram prog)
           (glEnableVertexAttribArray 0)
           (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref buff 0))
           (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
           (glDrawArrays GL_TRIANGLES 0 3)
           (glDisableVertexAttribArray 0)
           ))
+  (send c swap-gl-buffers)
   (loop))
 
 #|
