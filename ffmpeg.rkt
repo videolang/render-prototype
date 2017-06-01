@@ -10,9 +10,10 @@
          video/private/ffmpeg)
 
 (define tri
-  (f32vector -1.0 -1.0 0.0
-              1.0 -1.0 0.0
-              0.0 1.0 0.0))
+  (f32vector -1.0 1.0 0.0
+              -1.0 -1.0 0.0
+              1.0 1.0 0.0
+              1.0 -1.0 0.0))
 (define vert
   @~a{
  #version 330 core
@@ -42,14 +43,14 @@
                [min-width 500]
                [min-height 500]
                [style '(gl no-autoclear)]))
-(define buff #f)
+(define gl-buff #f)
 (define prog #f)
 (send c with-gl-context
       (λ ()
         (define arr (glGenVertexArrays 1))
         (glBindVertexArray (u32vector-ref arr 0))
-        (set! buff (glGenBuffers 1))
-        (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref buff 0))
+        (set! gl-buff (glGenBuffers 1))
+        (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref gl-buff 0))
         (glBufferData GL_ARRAY_BUFFER
                       (* (compiler-sizeof 'float) (f32vector-length tri))
                       tri
@@ -71,25 +72,9 @@
         (glDeleteShader f-shad)
         (glUseProgram prog)
         (glViewport 0 0 500 500)
-        (glClearColor 0.0 0.0 0.0 0.0)
-        ))
+        (glClearColor 0.0 0.0 0.0 0.0)))
 (send f show #t)
 
-(let loop ()
-  (send c with-gl-context
-        (λ ()
-          (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
-          (glUseProgram prog)
-          (glEnableVertexAttribArray 0)
-          (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref buff 0))
-          (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
-          (glDrawArrays GL_TRIANGLES 0 3)
-          (glDisableVertexAttribArray 0)
-          ))
-  (send c swap-gl-buffers)
-  (loop))
-
-#|
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
 (define avformat (avformat-open-input testfile #f #f))
@@ -158,10 +143,18 @@
                                      (* i linesize))
                             _uint8
                             (* 3 (avcodec-context-width new-ctx)))))
+        (gvector-add! film fbuff)
         (send c with-gl-context
-              (λ () (displayln "hola")))
-        (gvector-add! film fbuff)))
+              (λ ()
+                (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
+                (glUseProgram prog)
+                (glEnableVertexAttribArray 0)
+                (glBindBuffer GL_ARRAY_BUFFER (u32vector-ref gl-buff 0))
+                (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
+                (glDrawArrays GL_TRIANGLE_STRIP 0 4)
+                (glDisableVertexAttribArray 0)))
+        (send c swap-gl-buffers)))
+
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
-|#
