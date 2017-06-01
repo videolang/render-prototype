@@ -7,8 +7,18 @@
          data/gvector
          opengl
          opengl/util
-         video/private/ffmpeg)
+         video/private/ffmpeg
+         racket/draw/private/local ;; needed for in-cairo-context
+         racket/draw/unsafe/cairo
+         racket/draw/unsafe/cairo-lib)
 
+(define-ffi-definer define-cairo cairo-lib)
+(define-syntax-rule (_cfun . rest)
+  (_fun #:lock-name "cairo-pango-lock" . rest))
+(define-cairo cairo_image_surface_create_for_data
+  (_cfun _pointer _uint _int _int _int -> _cairo_surface_t))
+
+#|
 (define tri
   (f32vector -1.0 1.0 0.0
               -1.0 -1.0 0.0
@@ -74,6 +84,7 @@
         (glViewport 0 0 500 500)
         (glClearColor 0.0 0.0 0.0 0.0)))
 (send f show #t)
+|#
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
@@ -97,7 +108,7 @@
 (avcodec-open2 new-ctx codec #f)
 (define frame (av-frame-alloc))
 (define frame-rgb (av-frame-alloc))
-(define num-bytes (av-image-get-buffer-size 'rgb24
+(define num-bytes (av-image-get-buffer-size 'argb
                                             (avcodec-context-width new-ctx)
                                             (avcodec-context-height new-ctx)
                                             32))
@@ -118,9 +129,12 @@
                   #f #f #f))
 (define packet (av-read-frame avformat))
 (define film (make-gvector #:capacity 10000))
+(define img (cairo_image_surface_create CAIRO_FORMAT_ARGB32
+                                        (avcodec-context-width new-ctx)
+                                        (avcodec-context-height new-ctx)))
 (let loop ([data packet]
            [count 0])
-  (when (and data (<= count 100))
+  (when (and data (<= count 10))
     (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
@@ -137,13 +151,40 @@
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
         (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
+        (define b (make-object bitmap%
+                    (avcodec-context-width new-ctx)
+                    (avcodec-context-height new-ctx)))
+        (send (new bitmap-dc% [bitmap b]) in-cairo-context
+              (λ (target-cr)
+                (cairo_surface_flush img)
+                (define data (cairo_image_surface_get_data img))
+                (for ([i (in-range (avcodec-context-height new-ctx))])
+                  (memcpy
+                   (ptr-add data (* i (avcodec-context-width new-ctx)))
+                   (ptr-add (array-ref (av-frame-data frame-rgb) 0)
+                            (* i linesize))
+                   (* 4 (avcodec-context-width new-ctx))))
+                (cairo_set_source_surface target-cr img 0.0 0.0)
+                (cairo_surface_mark_dirty img)
+                (cairo_paint target-cr)))
+        (send b save-file (format "frame~a.png" count) 'png)
+        #;
+        (displayln 
+        (cblock->vector img
+                        _uint8
+                        (* 4
+                           (avcodec-context-width new-ctx)
+                           (avcodec-context-height new-ctx))))
+        #;
         (define fbuff
           (for/vector ([i (in-range (avcodec-context-height new-ctx))])
             (cblock->vector (ptr-add (array-ref (av-frame-data frame-rgb) 0)
                                      (* i linesize))
                             _uint8
-                            (* 3 (avcodec-context-width new-ctx)))))
-        (gvector-add! film fbuff)
+                            (* 4 (avcodec-context-width new-ctx)))))
+        ;fbuff
+        ;(gvector-add! film fbuff)
+        #|
         (send c with-gl-context
               (λ ()
                 (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
@@ -153,8 +194,10 @@
                 (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
                 (glDrawArrays GL_TRIANGLE_STRIP 0 4)
                 (glDisableVertexAttribArray 0)))
-        (send c swap-gl-buffers)))
-
+        (send c swap-gl-buffers)
+|#
+        ))
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
+(cairo_surface_destroy img)
