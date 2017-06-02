@@ -60,16 +60,21 @@
   @~a{
  #version 330 core
  layout(location = 0) in vec3 vertexPosition_modelspace;
+ layout(location = 1) in vec2 vertexUV;
+ out vec2 UV;
  void main(){
   gl_Position.xyz = vertexPosition_modelspace;
   gl_Position.w = 1.0;
+  UV = vertexUV;
  }})
 (define frag
   @~a{
  #version 330 core
+ in vec2 UV;
  out vec3 color;
+ uniform sampler2D myTextureSampler;
  void main(){
-  color = vec3(1,0,0);
+  color = texture(myTextureSampler, UV).rgb;
  }})
 
 (define glconf (new gl-config%))
@@ -109,6 +114,9 @@
                       GL_RGB
                       GL_UNSIGNED_BYTE
                       #f)
+        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER  GL_NEAREST)
+        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
+
         (define v-shad (glCreateShader GL_VERTEX_SHADER))
         (define f-shad (glCreateShader GL_FRAGMENT_SHADER))
         (glShaderSource v-shad 1 (vector vert) (s32vector (string-length vert)))
