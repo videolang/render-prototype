@@ -132,8 +132,15 @@
 (define img (cairo_image_surface_create CAIRO_FORMAT_ARGB32
                                         (avcodec-context-width new-ctx)
                                         (avcodec-context-height new-ctx)))
+(define f (new frame%
+               [label "FFMPEG Test"]
+               [width (avcodec-context-width new-ctx)]
+               [height (avcodec-context-height new-ctx)]))
+(define c (new canvas%
+               [parent f]))
+(send f show #t)
 (let loop ([data packet]
-           [count 1])
+           [count 80])
   (when (and data (<= count 50))
     ;(displayln count)
     (define count-inc 0)
@@ -151,10 +158,13 @@
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
         (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
+        (void)
+        #;
         (define b (make-object bitmap%
                     (avcodec-context-width new-ctx)
                     (avcodec-context-height new-ctx)))
-        (send (new bitmap-dc% [bitmap b]) in-cairo-context
+        ;(send (new bitmap-dc% [bitmap b]) in-cairo-context
+        (send (send c get-dc) in-cairo-context
               (λ (target-cr)
                 (cairo_surface_flush img)
                 (define data (cairo_image_surface_get_data img))
@@ -176,7 +186,7 @@
                                            _uint8
                                            (* 4 (avcodec-context-width new-ctx))))
                 (cairo_paint target-cr)))
-        (send b save-file (format "frame~a.png" count) 'png)
+        ;(send b save-file (format "frame~a.png" count) 'png)
         #;
         (displayln 
         (cblock->vector (cairo_image_surface_get_data img)
