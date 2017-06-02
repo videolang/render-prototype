@@ -82,13 +82,11 @@
 
 (define f (new frame%
                [label "Movie"]
-               [width 500]
-               [height 500]))
+               [width (avcodec-context-width new-ctx)]
+               [height (avcodec-context-height new-ctx)]))
 (define c (new canvas%
                [parent f]
                [gl-config glconf]
-               [min-width 500]
-               [min-height 500]
                [style '(gl no-autoclear)]))
 (define gl-buff #f)
 (define gl-tex-buff #f)
@@ -133,7 +131,7 @@
         (glDeleteShader v-shad)
         (glDeleteShader f-shad)
         (glUseProgram prog)
-        (glViewport 0 0 500 500)
+        (glViewport 0 0 (avcodec-context-width new-ctx) (avcodec-context-height new-ctx))
         (glClearColor 0.0 0.0 0.0 0.0)))
 (send f show #t)
 
@@ -141,7 +139,7 @@
 (define film (make-gvector #:capacity 10000))
 (let loop ([data packet]
            [count 0])
-  (when (and data (<= count 20))
+  (when (and data (<= count 1000))
     (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
@@ -158,18 +156,20 @@
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
         (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
-        (void)
-        #;
-        (define fbuff
-          (for/vector ([i (in-range (avcodec-context-height new-ctx))])
-            (cblock->vector (ptr-add (array-ref (av-frame-data frame-rgb) 0)
-                                     (* i linesize))
-                            _uint8
-                            (* 4 (avcodec-context-width new-ctx)))))
-        ;fbuff
-        ;(gvector-add! film fbuff)
         (send c with-gl-context
               (λ ()
+                (glBindTexture GL_TEXTURE_2D (u32vector-ref gl-tex-buff 0))
+                (for ([i (in-range (avcodec-context-height new-ctx))])
+                  (glTexSubImage2D GL_TEXTURE_2D
+                                   0
+                                   0
+                                   i
+                                   (avcodec-context-width new-ctx)
+                                   1
+                                   GL_RGB
+                                   GL_UNSIGNED_BYTE
+                                   (ptr-add (array-ref (av-frame-data frame-rgb) 0)
+                                            (* i linesize))))
                 (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT))
                 (glUseProgram prog)
                 (glEnableVertexAttribArray 0)
