@@ -133,9 +133,9 @@
                                         (avcodec-context-width new-ctx)
                                         (avcodec-context-height new-ctx)))
 (let loop ([data packet]
-           [count 0])
-  (when (and data (<= count 10))
-    (displayln count)
+           [count 1])
+  (when (and data (<= count 50))
+    ;(displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
       (with-handlers ([exn:ffmpeg:again? void]
@@ -160,17 +160,26 @@
                 (define data (cairo_image_surface_get_data img))
                 (for ([i (in-range (avcodec-context-height new-ctx))])
                   (memcpy
-                   (ptr-add data (* i (avcodec-context-width new-ctx)))
-                   (ptr-add (array-ref (av-frame-data frame-rgb) 0)
-                            (* i linesize))
+                   data
+                   (* i (avcodec-context-width new-ctx))
+                   (array-ref (av-frame-data frame-rgb) 0)
+                   (* i linesize)
                    (* 4 (avcodec-context-width new-ctx))))
-                (cairo_set_source_surface target-cr img 0.0 0.0)
+                #;
+                (displayln (cblock->vector (array-ref (av-frame-data frame-rgb) 0)
+                                           _uint8
+                                           (* 4 (avcodec-context-width new-ctx))))
                 (cairo_surface_mark_dirty img)
+                (cairo_set_source_surface target-cr img 10.0 10.0)
+                #;
+                (displayln (cblock->vector (ptr-add data (* 700 (avcodec-context-width new-ctx)))
+                                           _uint8
+                                           (* 4 (avcodec-context-width new-ctx))))
                 (cairo_paint target-cr)))
         (send b save-file (format "frame~a.png" count) 'png)
         #;
         (displayln 
-        (cblock->vector img
+        (cblock->vector (cairo_image_surface_get_data img)
                         _uint8
                         (* 4
                            (avcodec-context-width new-ctx)
