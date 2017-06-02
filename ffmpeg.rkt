@@ -115,7 +115,7 @@
 (define buff (av-malloc num-bytes _uint8))
 (avpicture-fill (cast frame-rgb _av-frame-pointer _avpicture-pointer)
                 (array-ptr buff)
-                'rgb24
+                'argb
                 (avcodec-context-width new-ctx)
                 (avcodec-context-height new-ctx))
 (define sws
@@ -124,7 +124,7 @@
                   (avcodec-context-pix-fmt new-ctx)
                   (avcodec-context-width new-ctx)
                   (avcodec-context-height new-ctx)
-                  'rgb24
+                  'argb
                   SWS-BILINEAR
                   #f #f #f))
 (define packet (av-read-frame avformat))
@@ -140,9 +140,9 @@
                [parent f]))
 (send f show #t)
 (let loop ([data packet]
-           [count 80])
-  (when (and data (<= count 50))
-    ;(displayln count)
+           [count 0])
+  (when (and data (<= count 2000))
+    (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
       (with-handlers ([exn:ffmpeg:again? void]
