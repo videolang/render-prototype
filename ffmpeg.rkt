@@ -56,10 +56,10 @@
               1.0 1.0 0.0
               1.0 -1.0 0.0))
 (define tex
-  (f32vector 0.0 1.0
-             0.0 0.0
-             1.0 1.0
-             1.0 0.0))
+  (f32vector 0.0 0.0
+             0.0 1.0
+             1.0 0.0
+             1.0 1.0))
 (define vert
   @~a{
  #version 330 core
@@ -152,7 +152,7 @@
 (define film (make-gvector #:capacity 10000))
 (let loop ([data packet]
            [count 0])
-  (when (and data (<= count 1000))
+  (when (and data (<= count 10000))
     (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
@@ -171,7 +171,6 @@
         (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
         (send c with-gl-context
               (λ ()
-                #;
                 (for ([i (in-range (avcodec-context-height new-ctx))])
                   (glTexSubImage2D GL_TEXTURE_2D
                                    0
