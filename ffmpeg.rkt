@@ -6,8 +6,21 @@
          data/gvector
          opengl
          opengl/util
+         sdl
          video/private/ffmpeg
          video/private/video-canvas)
+
+(SDL_Init (bitwise-ior SDL_INIT_VIDEO SDL_INIT_AUDIO SDL_INIT_TIMER))
+
+(define (get-codec type)
+  (for/fold ([codec #f]
+             [index #f])
+            ([i strs]
+             [i* (in-naturals)])
+    (define c (avstream-codec i))
+    (cond [codec (values codec index)]
+          [(equal? (avcodec-context-codec-type* c) type) (values c i*)]
+          [else (values codec index)])))
 
 (define testfile "/Users/leif/demo2.mp4")
 (av-register-all)
@@ -15,20 +28,16 @@
 (avformat-find-stream-info avformat #f)
 (av-dump-format avformat 0 testfile 0)
 (define strs (avformat-context-streams avformat))
-(define-values (codec-ctx codec-index)
-  (for/fold ([codec #f]
-             [index #f])
-            ([i strs]
-             [i* (in-naturals)])
-    (define c (avstream-codec i))
-    (if codec
-        (values codec index)
-        (and (equal? (avcodec-context-codec-type* c) 'video)
-             (values c i*)))))
+(define-values (codec-ctx codec-index) (get-codec 'video))
+(define-values (audio-codec-ctx audio-codec-index) (get-codec 'audio))
 (define codec-id (avcodec-context-codec-id codec-ctx))
+(define audio-codec-id (avcodec-context-codec-id audio-codec-ctx))
 (define codec (avcodec-find-decoder codec-id))
+(define audio-codec (avcodec-find-decoder audio-codec-id))
 (define new-ctx (avcodec-copy-context codec codec-ctx))
+(define audio-new-ctx (avcodec-copy-context audio-codec audio-codec-ctx))
 (avcodec-open2 new-ctx codec #f)
+(avcodec-open2 audio-new-ctx audio-codec #f)
 (define frame (av-frame-alloc))
 (define frame-rgb (av-frame-alloc))
 (define num-bytes (av-image-get-buffer-size 'rgb24
