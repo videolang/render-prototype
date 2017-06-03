@@ -3,7 +3,6 @@
 (require ffi/unsafe
          ffi/unsafe/define
          ffi/vector
-         ;ffi/unsafe/define/conventions
          data/gvector
          opengl
          opengl/util
@@ -38,7 +37,7 @@
 (define buff (av-malloc num-bytes _uint8))
 (avpicture-fill (cast frame-rgb _av-frame-pointer _avpicture-pointer)
                 (array-ptr buff)
-                'argb
+                'rgb24
                 (avcodec-context-width new-ctx)
                 (avcodec-context-height new-ctx))
 (define sws
@@ -47,7 +46,7 @@
                   (avcodec-context-pix-fmt new-ctx)
                   (avcodec-context-width new-ctx)
                   (avcodec-context-height new-ctx)
-                  'argb
+                  'rgb24
                   SWS-BILINEAR
                   #f #f #f))
 
@@ -59,8 +58,8 @@
 (define tex
   (f32vector 0.0 1.0
              0.0 0.0
-             1.0 0.0
-             1.0 1.0))
+             1.0 1.0
+             1.0 0.0))
 (define vert
   @~a{
  #version 330 core
@@ -108,7 +107,7 @@
                       (* (compiler-sizeof 'float) (f32vector-length scr))
                       scr
                       GL_STATIC_DRAW)
-        (set! gl-uv-buff (u32vector-ref (glGenTextures 1) 0))
+        (set! gl-uv-buff (u32vector-ref (glGenBuffers 1) 0))
         (glBindBuffer GL_ARRAY_BUFFER gl-uv-buff)
         (glBufferData GL_ARRAY_BUFFER
                       (* (compiler-sizeof 'float) (f32vector-length tex))
@@ -125,7 +124,7 @@
                       GL_RGB
                       GL_UNSIGNED_BYTE
                       #f)
-        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER  GL_NEAREST)
+        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_NEAREST)
         (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
 
         (define v-shad (glCreateShader GL_VERTEX_SHADER))
@@ -154,7 +153,7 @@
 (let loop ([data packet]
            [count 0])
   (when (and data (<= count 1000))
-    ;(displayln count)
+    (displayln count)
     (define count-inc 0)
     (when (= (avpacket-stream-index data) codec-index)
       (with-handlers ([exn:ffmpeg:again? void]
@@ -172,7 +171,7 @@
         (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
         (send c with-gl-context
               (λ ()
-                (glBindTexture GL_TEXTURE_2D gl-tex-buff)
+                #;
                 (for ([i (in-range (avcodec-context-height new-ctx))])
                   (glTexSubImage2D GL_TEXTURE_2D
                                    0
@@ -192,13 +191,13 @@
                 (glEnableVertexAttribArray 0)
                 (glBindBuffer GL_ARRAY_BUFFER gl-buff)
                 (glVertexAttribPointer 0 3 GL_FLOAT #f 0 #f)
+                (glEnableVertexAttribArray 1)
                 (glBindBuffer GL_ARRAY_BUFFER gl-uv-buff)
                 (glVertexAttribPointer 1 2 GL_FLOAT #f 0 #f)
                 (glDrawArrays GL_TRIANGLE_STRIP 0 4)
                 (glDisableVertexAttribArray 0)
                 (glDisableVertexAttribArray 1)))
-        (send c swap-gl-buffers)
-        ))
+        (send c swap-gl-buffers)))
     (loop (av-read-frame avformat data) (+ count count-inc))))
 (when packet
   (av-packet-unref packet))
