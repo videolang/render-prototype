@@ -13,8 +13,8 @@
 (define audio-callback
   (let ()
     (define base-frames 0)
-  (λ (setter frames)
-    (void))))
+    (λ (setter frames)
+      (void))))
 
 (define (get-codec type)
   (for/fold ([codec #f]
@@ -47,7 +47,7 @@
 (define num-bytes (av-image-get-buffer-size 'rgb24
                                             (avcodec-context-width new-ctx)
                                             (avcodec-context-height new-ctx)
-                                           32))
+                                            32))
 (define buff (av-malloc num-bytes _uint8))
 (void
  (av-image-fill-arrays (av-frame-data frame-rgb)
@@ -77,7 +77,7 @@
                [parent f]))
 (send f show #t)
 
-;(stream-play audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx))
+(stream-play audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx))
 
 (define packet (av-read-frame avformat))
 (define film (make-gvector #:capacity 10000))
