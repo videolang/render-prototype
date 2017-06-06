@@ -8,7 +8,9 @@
          opengl/util
          portaudio
          video/private/ffmpeg
+         video/private/audioqueue
          video/private/video-canvas)
+
 
 (define audio-callback
   (let ()
@@ -77,14 +79,18 @@
                [parent f]))
 (send f show #t)
 
-(stream-play audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx))
+
+(define audio-queue (mk-audioqueue))
+
+(define audio-buf-size (/ (* 2 AVCODEC-MAX-AUDIO-FRAME-SIZE)
+                          (avcodec-context-sample-rate audio-new-ctx)))
+(stream-play audio-callback audio-buf-size (avcodec-context-sample-rate audio-new-ctx))
 
 (define packet (av-read-frame avformat))
 (define film (make-gvector #:capacity 10000))
 (let loop ([data packet]
            [count 0])
   (when (and data (<= count 10000))
-    (displayln count)
     (define count-inc 0)
     (with-handlers ([exn:ffmpeg:again? void]
                     [exn:ffmpeg:eof? void])
@@ -116,7 +122,15 @@
                                              (* i linesize))))))
          (av-packet-unref packet)]
         [(= (avpacket-stream-index data) audio-codec-index)
-         (void)]
+         (audioqueue-put audio-queue packet)]
         [else
          (av-packet-unref packet)]))
     (loop (av-read-frame avformat data) (+ count count-inc))))
+
+(avframe-free frame)
+(avframe-free frame-rgb)
+(avcodec-close codec-ctx)
+(avcodec-close new-ctx)
+(avcodec-close audio-codec-ctx)
+(avcodec-close audio-new-ctx)
+(avformat-close-input format)
