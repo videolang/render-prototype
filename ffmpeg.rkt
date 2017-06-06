@@ -82,23 +82,21 @@
 
 (define audio-queue (mk-audioqueue))
 
-(define audio-buf-size (/ (* 2 AVCODEC-MAX-AUDIO-FRAME-SIZE)
-                          (avcodec-context-sample-rate audio-new-ctx)))
+;;; XXX EWW...too small...
+(define audio-buf-size (/ (* 0.15 AVCODEC-MAX-AUDIO-FRAME-SIZE)
+                         (avcodec-context-sample-rate audio-new-ctx)))
 (stream-play audio-callback audio-buf-size (avcodec-context-sample-rate audio-new-ctx))
 
-(define packet (av-read-frame avformat))
 (define film (make-gvector #:capacity 10000))
-(let loop ([data packet]
-           [count 0])
-  (when (and data (<= count 10000))
-    (define count-inc 0)
+(let loop ()
+  (define packet (av-read-frame avformat))
+  (when packet
     (with-handlers ([exn:ffmpeg:again? void]
                     [exn:ffmpeg:eof? void])
       (cond
-        [(= (avpacket-stream-index data) codec-index)
-         (avcodec-send-packet new-ctx data)
+        [(= (avpacket-stream-index packet) codec-index)
+         (avcodec-send-packet new-ctx packet)
          (avcodec-receive-frame new-ctx frame)
-         (set! count-inc 1)
          (sws-scale sws
                     (array-ptr (av-frame-data frame))
                     (array-ptr (av-frame-linesize frame))
@@ -121,16 +119,16 @@
                                     (ptr-add (array-ref (av-frame-data frame-rgb) 0)
                                              (* i linesize))))))
          (av-packet-unref packet)]
-        [(= (avpacket-stream-index data) audio-codec-index)
+        [(= (avpacket-stream-index packet) audio-codec-index)
          (audioqueue-put audio-queue packet)]
         [else
          (av-packet-unref packet)]))
-    (loop (av-read-frame avformat data) (+ count count-inc))))
+    (loop)))
 
-(avframe-free frame)
-(avframe-free frame-rgb)
+(av-frame-free frame)
+(av-frame-free frame-rgb)
 (avcodec-close codec-ctx)
 (avcodec-close new-ctx)
 (avcodec-close audio-codec-ctx)
 (avcodec-close audio-new-ctx)
-(avformat-close-input format)
+(avformat-close-input avformat)
