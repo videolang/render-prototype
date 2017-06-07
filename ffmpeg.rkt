@@ -15,11 +15,17 @@
 (define audio-decode-frame
   (let ()
     (define frame (av-frame-alloc))
+    (define audio-block #f)
     (generator (audio-ctx buffer capacity)
       (let loop ()
-        (define packet (audioqueue-get audio-queue #f))
+        (define packet (audioqueue-get audio-queue audio-block))
+        ;(set! audio-block #t)
         (define size (avpacket-size packet))
         (define data-offset 0)
+        #|
+        (memset buffer 0 capacity)
+        (yield capacity)
+|#
         (with-handlers ([exn:ffmpeg:again? void]
                         [exn:ffmpeg:eof? void])
           (avcodec-send-packet audio-ctx packet)
@@ -39,15 +45,14 @@
               (memcpy buffer
                       (array-ref (av-frame-data frame) 0)
                       data-size)
-              (when (> data-size 0)
-                (yield data-size))
+              ;(memset buffer 0 data-size)
+              (yield data-size)
               (loop))))
         (av-packet-unref packet)
         (loop)))))
 
 (define audio-callback
   (let ()
-    (define base-frames 0)
     (define audio-buffer-capacity
       (* 2/3 AVCODEC-MAX-AUDIO-FRAME-SIZE))
     (define audio-buffer
@@ -55,23 +60,29 @@
     (define audio-buff-size 0)
     (define audio-buff-index 0)
     (λ (stream len)
-      (with-handlers ([exn:audioqueue-empty? (λ (e) void)])
-        (let loop ([st-offset 0]
-                   [len len])
-          (when (> len 0)
-            ; Buffer used up, got more audio.
-            (when (>= audio-buff-index audio-buff-size)
+      (let loop ([st-offset 0]
+                 [len len])
+        (when (> len 0)
+          ; Buffer used up, got more audio.
+          (when (>= audio-buff-index audio-buff-size)
+            (with-handlers ([exn:audioqueue-empty?
+                             (λ (e)
+                               (set! audio-buff-size 1024)
+                               (memset audio-buffer 0 audio-buff-size))])
+              ;(raise (exn:audioqueue-empty))
               (set! audio-buff-size
-                    (audio-decode-frame audio-new-ctx audio-buffer audio-buffer-capacity))
-              (when (< audio-buff-size 0)
-                (set! audio-buff-size 1024)
-                (memset audio-buffer 0 audio-buff-size))
-              (set! audio-buff-index 0))
-            (define len* (min (- audio-buff-size audio-buff-index)
-                              len))
-            (memcpy stream st-offset audio-buffer audio-buff-index len*)
-            (set! audio-buff-index (+ audio-buff-index len*))
-            (loop (+ st-offset len*) (- len len*))))))))
+                    (audio-decode-frame audio-new-ctx
+                                        audio-buffer
+                                        audio-buffer-capacity)))
+            (set! audio-buff-index 0))
+          ;(displayln (cblock->vector audio-buffer _uint8 audio-buff-size))
+          (define len* (min (- audio-buff-size audio-buff-index)
+                            len))
+          (memcpy stream st-offset audio-buffer audio-buff-index len*)
+          (set! audio-buff-index (+ audio-buff-index len*))
+          (loop (+ st-offset len*) (- len len*))))
+      ;(displayln (cblock->vector stream _uint8 len))
+      )))
 
 (define (get-codec type)
   (for/fold ([codec #f]
@@ -137,7 +148,8 @@
 
 (define audio-queue (mk-audioqueue))
 
-(define audio-procs (stream-play/unsafe audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx)))
+(define audio-procs
+  (stream-play/unsafe audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx)))
 
 (define film (make-gvector #:capacity 10000))
 (let loop ()
@@ -149,6 +161,7 @@
         [(= (avpacket-stream-index packet) codec-index)
          (avcodec-send-packet new-ctx packet)
          (avcodec-receive-frame new-ctx frame)
+         #|
          (sws-scale sws
                     (array-ptr (av-frame-data frame))
                     (array-ptr (av-frame-linesize frame))
@@ -170,6 +183,7 @@
                                     GL_UNSIGNED_BYTE
                                     (ptr-add (array-ref (av-frame-data frame-rgb) 0)
                                              (* i linesize))))))
+|#
          (av-packet-unref packet)]
         [(= (avpacket-stream-index packet) audio-codec-index)
          #|
