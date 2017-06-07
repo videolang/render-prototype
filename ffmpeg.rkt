@@ -1,6 +1,7 @@
 #lang at-exp racket/gui
 
-(require ffi/unsafe
+(require racket/generator
+         ffi/unsafe
          ffi/unsafe/define
          ffi/vector
          data/gvector
@@ -11,12 +12,66 @@
          video/private/audioqueue
          video/private/video-canvas)
 
+(define audio-decode-frame
+  (let ()
+    (define frame (av-frame-alloc))
+    (generator (audio-ctx buffer capacity)
+      (let loop ()
+        (define packet (audioqueue-get audio-queue #f))
+        (define size (avpacket-size packet))
+        (define data-offset 0)
+        (with-handlers ([exn:ffmpeg:again? void]
+                        [exn:ffmpeg:eof? void])
+          (avcodec-send-packet audio-ctx packet)
+          (let loop ()
+            (with-handlers ([exn:ffmpeg:again? void]
+                            [exn:ffmpeg:eof? void])
+              (avcodec-receive-frame audio-ctx frame)
+              (define data-size
+                (av-samples-get-buffer-size #f
+                                            (avcodec-context-channels audio-ctx)
+                                            (av-frame-nb-samples frame)
+                                            (avcodec-context-sample-fmt audio-ctx)
+                                            1))
+              (when (> data-size capacity)
+                (error 'audio-decode-frame
+                       "Buffer too small (shouldn't happen)"))
+              (memcpy buffer
+                      (array-ref (av-frame-data frame) 0)
+                      data-size)
+              (when (> data-size 0)
+                (yield data-size))
+              (loop))))
+        (av-packet-unref packet)
+        (loop)))))
 
 (define audio-callback
   (let ()
     (define base-frames 0)
-    (λ (setter frames)
-      (void))))
+    (define audio-buffer-capacity
+      (* 2/3 AVCODEC-MAX-AUDIO-FRAME-SIZE))
+    (define audio-buffer
+      (malloc _uint8 audio-buffer-capacity))
+    (define audio-buff-size 0)
+    (define audio-buff-index 0)
+    (λ (stream len)
+      (with-handlers ([exn:audioqueue-empty? (λ (e) void)])
+        (let loop ([st-offset 0]
+                   [len len])
+          (when (> len 0)
+            ; Buffer used up, got more audio.
+            (when (>= audio-buff-index audio-buff-size)
+              (set! audio-buff-size
+                    (audio-decode-frame audio-new-ctx audio-buffer audio-buffer-capacity))
+              (when (< audio-buff-size 0)
+                (set! audio-buff-size 1024)
+                (memset audio-buffer 0 audio-buff-size))
+              (set! audio-buff-index 0))
+            (define len* (min (- audio-buff-size audio-buff-index)
+                              len))
+            (memcpy stream st-offset audio-buffer audio-buff-index len*)
+            (set! audio-buff-index (+ audio-buff-index len*))
+            (loop (+ st-offset len*) (- len len*))))))))
 
 (define (get-codec type)
   (for/fold ([codec #f]
@@ -82,10 +137,7 @@
 
 (define audio-queue (mk-audioqueue))
 
-;;; XXX EWW...too small...
-(define audio-buf-size (/ (* 0.15 AVCODEC-MAX-AUDIO-FRAME-SIZE)
-                         (avcodec-context-sample-rate audio-new-ctx)))
-(stream-play audio-callback audio-buf-size (avcodec-context-sample-rate audio-new-ctx))
+(define audio-procs (stream-play/unsafe audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx)))
 
 (define film (make-gvector #:capacity 10000))
 (let loop ()
@@ -120,6 +172,12 @@
                                              (* i linesize))))))
          (av-packet-unref packet)]
         [(= (avpacket-stream-index packet) audio-codec-index)
+         #|
+         (avcodec-send-packet audio-new-ctx packet)
+         (let loop ()
+           (avcodec-receive-frame audio-new-ctx frame)
+           (loop))
+|#
          (audioqueue-put audio-queue packet)]
         [else
          (av-packet-unref packet)]))
@@ -132,3 +190,4 @@
 (avcodec-close audio-codec-ctx)
 (avcodec-close audio-new-ctx)
 (avformat-close-input avformat)
+(send f show #f)
