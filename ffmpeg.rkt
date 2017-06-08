@@ -35,7 +35,7 @@
                             [exn:ffmpeg:eof? void])
               (avcodec-receive-frame audio-ctx frame)
               (define data-size
-                (* 2 (av-frame-nb-samples frame)))
+                (av-frame-nb-samples frame))
               (when (> data-size capacity)
                 (error 'audio-decode-frame
                        "Buffer too small (shouldn't happen)"))
@@ -44,7 +44,7 @@
                            data-size
                            (av-frame-extended-data frame)
                            data-size)
-              (yield data-size)
+              (yield (* 2 data-size))
               (loop))))
         (av-packet-unref packet)
         (loop)))))
@@ -54,7 +54,7 @@
     (define audio-buffer-capacity
       (* 2/3 AVCODEC-MAX-AUDIO-FRAME-SIZE))
     (define audio-buffer
-      (malloc _uint16 audio-buffer-capacity))
+      (malloc _int16 audio-buffer-capacity))
     (define audio-buff-size 0)
     (define audio-buff-index 0)
     (λ (stream len)
@@ -168,6 +168,7 @@
         [(= (avpacket-stream-index packet) codec-index)
          (avcodec-send-packet new-ctx packet)
          (avcodec-receive-frame new-ctx frame)
+         
          (sws-scale sws
                     (array-ptr (av-frame-data frame))
                     (array-ptr (av-frame-linesize frame))
