@@ -4,6 +4,7 @@
          ffi/unsafe
          ffi/unsafe/define
          ffi/vector
+         ffi/cvector
          data/gvector
          opengl
          opengl/util
@@ -34,18 +35,15 @@
                             [exn:ffmpeg:eof? void])
               (avcodec-receive-frame audio-ctx frame)
               (define data-size
-                (av-samples-get-buffer-size #f
-                                            (avcodec-context-channels audio-ctx)
-                                            (av-frame-nb-samples frame)
-                                            (avcodec-context-sample-fmt audio-ctx)
-                                            1))
+                (* 2 (av-frame-nb-samples frame)))
               (when (> data-size capacity)
                 (error 'audio-decode-frame
                        "Buffer too small (shouldn't happen)"))
-              (memcpy buffer
-                      (array-ref (av-frame-data frame) 0)
-                      data-size)
-              ;(memset buffer 0 data-size)
+              (swr-convert swr
+                           (cvector-ptr (cvector _pointer buffer))
+                           data-size
+                           (av-frame-extended-data frame)
+                           data-size)
               (yield data-size)
               (loop))))
         (av-packet-unref packet)
@@ -56,7 +54,7 @@
     (define audio-buffer-capacity
       (* 2/3 AVCODEC-MAX-AUDIO-FRAME-SIZE))
     (define audio-buffer
-      (malloc _uint8 audio-buffer-capacity))
+      (malloc _uint16 audio-buffer-capacity))
     (define audio-buff-size 0)
     (define audio-buff-index 0)
     (λ (stream len)
@@ -135,6 +133,15 @@
                   SWS-BILINEAR
                   #f #f #f))
 
+(define swr (swr-alloc))
+(av-opt-set-int swr "in_channel_layout" (avcodec-context-channel-layout audio-new-ctx) 0)
+(av-opt-set-int swr "out_channel_layout" (cast 'sterio _av-ch _int) 0)
+(av-opt-set-int swr "in_sample_rate" (avcodec-context-sample-rate audio-new-ctx) 0)
+(av-opt-set-int swr "out_sample_rate" (avcodec-context-sample-rate audio-new-ctx) 0)
+(av-opt-set-sample-fmt swr "in_sample_fmt" 'fltp 0)
+(av-opt-set-sample-fmt swr "out_sample_fmt" 's16 0)
+(swr-init swr)
+
 (define f (new frame%
                [label "Movie"]
                [width (avcodec-context-width new-ctx)]
@@ -161,7 +168,6 @@
         [(= (avpacket-stream-index packet) codec-index)
          (avcodec-send-packet new-ctx packet)
          (avcodec-receive-frame new-ctx frame)
-         #|
          (sws-scale sws
                     (array-ptr (av-frame-data frame))
                     (array-ptr (av-frame-linesize frame))
@@ -183,15 +189,8 @@
                                     GL_UNSIGNED_BYTE
                                     (ptr-add (array-ref (av-frame-data frame-rgb) 0)
                                              (* i linesize))))))
-|#
          (av-packet-unref packet)]
         [(= (avpacket-stream-index packet) audio-codec-index)
-         #|
-         (avcodec-send-packet audio-new-ctx packet)
-         (let loop ()
-           (avcodec-receive-frame audio-new-ctx frame)
-           (loop))
-|#
          (audioqueue-put audio-queue packet)]
         [else
          (av-packet-unref packet)]))
