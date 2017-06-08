@@ -15,7 +15,6 @@
          video/private/audioqueue
          video/private/video-canvas)
 
-#|
 (define audio-decode-frame
   (let ()
     (define frame (av-frame-alloc))
@@ -72,7 +71,7 @@
                                (memset audio-buffer 0 audio-buff-size))])
               ;(raise (exn:audioqueue-empty))
               (set! audio-buff-size
-                    (audio-decode-frame audio-new-ctx
+                    (audio-decode-frame audio-context
                                         audio-buffer
                                         audio-buffer-capacity)))
             (set! audio-buff-index 0))
@@ -85,17 +84,7 @@
       ;(displayln (cblock->vector stream _uint8 len))
       )))
 
-(define (get-codec type)
-  (for/fold ([codec #f]
-             [index #f])
-            ([i strs]
-             [i* (in-naturals)])
-    (define c (avstream-codec i))
-    (cond [codec (values codec index)]
-          [(equal? (avcodec-context-codec-type* c) type) (values c i*)]
-          [else (values codec index)])))
-|#
-
+;; Video
 (define frame (av-frame-alloc))
 (define frame-rgb (av-frame-alloc))
 (define num-bytes #f)
@@ -103,6 +92,13 @@
 (define sws #f)
 (define f #f)
 (define c #f)
+
+;; Aduio
+(define audio-queue (mk-audioqueue))
+(define swr #f)
+(define audio-context #f)
+(define audio-procs #f)
+
 (stream-file
  "/Users/leif/demo2.mp4"
  #:video-callback (λ (mode obj packet)
@@ -159,51 +155,42 @@
                             (send c draw-frame
                                   (λ ()
                                     (for ([i (in-range (avcodec-context-height codec-context))])
-                                      (glTexSubImage2D GL_TEXTURE_2D
-                                                       0
-                                                       0
-                                                       i
-                                                       (avcodec-context-width codec-context)
-                                                       1
-                                                       GL_RGB
-                                                       GL_UNSIGNED_BYTE
-                                                       (ptr-add (array-ref (av-frame-data frame-rgb) 0)
-                                                                (* i linesize)))))))
+                                      (glTexSubImage2D
+                                       GL_TEXTURE_2D
+                                       0
+                                       0
+                                       i
+                                       (avcodec-context-width codec-context)
+                                       1
+                                       GL_RGB
+                                       GL_UNSIGNED_BYTE
+                                       (ptr-add (array-ref (av-frame-data frame-rgb) 0)
+                                                (* i linesize)))))))
                           (av-packet-unref packet)]
-                         ['close (send f show #f)])])))
-
-#|
-(define swr (swr-alloc))
-(av-opt-set-int swr "in_channel_layout" (avcodec-context-channel-layout audio-new-ctx) 0)
-(av-opt-set-int swr "out_channel_layout" (cast 'sterio _av-ch _int) 0)
-(av-opt-set-int swr "in_sample_rate" (avcodec-context-sample-rate audio-new-ctx) 0)
-(av-opt-set-int swr "out_sample_rate" (avcodec-context-sample-rate audio-new-ctx) 0)
-(av-opt-set-sample-fmt swr "in_sample_fmt" 'fltp 0)
-(av-opt-set-sample-fmt swr "out_sample_fmt" 's16 0)
-(swr-init swr)
-
-
-(define audio-queue (mk-audioqueue))
-
-(define audio-procs
-  (stream-play/unsafe audio-callback 0.2 (avcodec-context-sample-rate audio-new-ctx)))
-|#
-
-#|
-(define film (make-gvector #:capacity 10000))
-(let loop ()
-  (define packet (av-read-frame avformat))
-  (when packet
-    (with-handlers ([exn:ffmpeg:again? void]
-                    [exn:ffmpeg:eof? void])
-      (cond
-        [(= (avpacket-stream-index packet) codec-index)
-        [(= (avpacket-stream-index packet) audio-codec-index)
-         (audioqueue-put audio-queue packet)]
-        [else
-         (av-packet-unref packet)]))
-    (loop)))
-|#
+                         ['close (send f show #f)])]))
+ #:audio-callback (λ (mode obj packet)
+                    (match obj
+                      [(struct* codec-obj
+                                ([codec-context codec-context]))
+                       (match mode
+                         ['init
+                          (set! audio-context codec-context)
+                          (set! swr (swr-alloc))
+                          (av-opt-set-int
+                           swr "in_channel_layout" (avcodec-context-channel-layout codec-context) 0)
+                          (av-opt-set-int swr "out_channel_layout" (cast 'sterio _av-ch _int) 0)
+                          (av-opt-set-int
+                           swr "in_sample_rate" (avcodec-context-sample-rate codec-context) 0)
+                          (av-opt-set-int
+                           swr "out_sample_rate" (avcodec-context-sample-rate codec-context) 0)
+                          (av-opt-set-sample-fmt swr "in_sample_fmt" 'fltp 0)
+                          (av-opt-set-sample-fmt swr "out_sample_fmt" 's16 0)
+                          (swr-init swr)
+                          (set! audio-procs
+                                (stream-play/unsafe
+                                 audio-callback 0.2 (avcodec-context-sample-rate codec-context)))]
+                         ['loop (audioqueue-put audio-queue packet)]
+                         ['close (void)])])))
 
 (av-frame-free frame)
 (av-frame-free frame-rgb)
