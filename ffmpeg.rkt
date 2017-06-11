@@ -177,6 +177,24 @@
 (define audio-context #f)
 (define audio-procs #f)
 
+(define in-bundle (file->stream-bundle "/Users/leif/demo2.mp4"))
+(demux-stream in-bundle
+              #:by-index-callback queue-stream)
+(define out-bundle (bundle-for-file "/Users/leif/test.mp4"
+                                    in-bundle))
+(define streams (stream-bundle-streams in-bundle))
+(define queue
+  (for/fold ([q #f])
+            ([s (in-vector streams)])
+    (or q (and (eq? (codec-obj-type s) 'video)
+               (codec-obj-callback-data s)))))
+(let loop ()
+  (define p (packetqueue-get queue))
+  (unless (eof-object? p)
+    (displayln p)
+    (loop)))
+
+#|
 (demux-stream
  (file->stream-bundle "/Users/leif/demo2.mp4")
  #:video-callback (λ (mode obj packet)
@@ -277,3 +295,4 @@
 
 (av-frame-free frame)
 (av-frame-free frame-rgb)
+|#
