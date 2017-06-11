@@ -15,6 +15,7 @@
          video/private/packetqueue
          video/private/video-canvas)
 
+#|
 (define audio-decode-frame
   (let ()
     (define frame (av-frame-alloc))
@@ -113,8 +114,7 @@
           (av-frame-get-buffer frame 32))
         (define frame (alloc-frame ctx))
         (define tmp-frame (and (not (eq? (avcodec-context-pix-fmt ctx) 'yuv420p))
-                               (alloc-frame ctx)))
-        (avcodec-parameters-from-context (avstream-codecpar str) ctx)]
+                               (alloc-frame ctx)))]
        ['write (error "TODO")]
        ['close (error "TODO")])]))
 
@@ -160,6 +160,7 @@
         (set-avstream-time-base! str (/ 1 (avcodec-context-sample-rate ctx)))]
        ['write (error "TODO")]
        ['close (error "TODO")])]))
+|#
 
 ;; Video
 (define frame (av-frame-alloc))
@@ -176,8 +177,8 @@
 (define audio-context #f)
 (define audio-procs #f)
 
-(decoder-stream
- "/Users/leif/demo2.mp4"
+(demux-stream
+ (file->stream-bundle "/Users/leif/demo2.mp4")
  #:video-callback (λ (mode obj packet)
                     (match obj
                       [(struct* codec-obj
@@ -244,7 +245,8 @@
                                        (ptr-add (array-ref (av-frame-data frame-rgb) 0)
                                                 (* i linesize)))))))
                           (av-packet-unref packet)]
-                         ['close (send f show #f)])]))
+                         ['close (send f show #f)])])))
+#|
  #:audio-callback (λ (mode obj packet)
                     (match obj
                       [(struct* codec-obj
@@ -271,6 +273,7 @@
                                  audio-callback 0.2 (avcodec-context-sample-rate codec-context)))]
                          ['loop (packetqueue-put audio-queue packet)]
                          ['close (void)])])))
+|#
 
 (av-frame-free frame)
 (av-frame-free frame-rgb)
