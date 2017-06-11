@@ -12,7 +12,7 @@
          portaudio
          video/private/ffmpeg
          video/private/ffmpeg-stream
-         video/private/audioqueue
+         video/private/packetqueue
          video/private/video-canvas)
 
 (define audio-decode-frame
@@ -21,7 +21,7 @@
     (define audio-block #f)
     (generator (audio-ctx buffer capacity)
       (let loop ()
-        (define packet (audioqueue-get audio-queue audio-block))
+        (define packet (packetqueue-get audio-queue audio-block))
         ;(set! audio-block #t)
         (define size (avpacket-size packet))
         (define data-offset 0)
@@ -65,11 +65,11 @@
         (when (> len 0)
           ; Buffer used up, got more audio.
           (when (>= audio-buff-index audio-buff-size)
-            (with-handlers ([exn:audioqueue-empty?
+            (with-handlers ([exn:packetqueue-empty?
                              (λ (e)
                                (set! audio-buff-size 1024)
                                (memset audio-buffer 0 audio-buff-size))])
-              ;(raise (exn:audioqueue-empty))
+              ;(raise (exn:packetqueue-empty))
               (set! audio-buff-size
                     (audio-decode-frame audio-context
                                         audio-buffer
@@ -84,6 +84,83 @@
       ;(displayln (cblock->vector stream _uint8 len))
       )))
 
+(define (empty-encoder-video-proc mode obj)
+  (match obj
+    [(struct* codec-obj
+              ([codec-context ctx]
+               [id codec-id]
+               [stream str]))
+     (match mode
+       ['init
+        (set-avcodec-context-codec-id! ctx codec-id)
+        (set-avcodec-context-bit-rate! ctx 400000)
+        (set-avcodec-context-width! ctx 1920)
+        (set-avcodec-context-height! ctx 1080)
+        (set-avstream-time-base! str 25)
+        (set-avcodec-context-time-base! ctx 25)
+        (set-avcodec-context-gop-size! ctx 12)
+        (set-avcodec-context-pix-fmt! ctx 'yuv420p)
+        (when (eq? codec-id 'mpeg2video)
+          (set-avcodec-context-max-b-frames! ctx 2))
+        (when (eq? codec-id 'mpeg1video)
+          (set-avcodec-context-mb-decision! ctx 2))]
+       ['open
+        (define (alloc-frame ctx)
+          (define frame (av-frame-alloc))
+          (set-av-frame-format! frame (avcodec-context-pix-fmt ctx))
+          (set-av-frame-width! frame (avcodec-context-width ctx))
+          (set-av-frame-height! frame (avcodec-context-height ctx))
+          (av-frame-get-buffer frame 32))
+        (define frame (alloc-frame ctx))
+        (define tmp-frame (and (not (eq? (avcodec-context-pix-fmt ctx) 'yuv420p))
+                               (alloc-frame ctx)))
+        (avcodec-parameters-from-context (avstream-codecpar str) ctx)]
+       ['write (error "TODO")]
+       ['close (error "TODO")])]))
+
+(define (empty-encoder-audio-proc mode obj)
+  (match mode
+    ['init
+     (match obj
+       [(struct* codec-obj
+                 ([codec-context ctx]
+                  [codec codec]
+                  [stream str]))
+        (set-avcodec-context-sample-fmt!
+         ctx (if (avcodec-sample-fmts codec)
+                 (ptr-ref (avcodec-sample-fmts codec))
+                 'fltp))
+        (set-avcodec-context-bit-rate! ctx 64000)
+        (define supported-samplerates (avcodec-supported-samplerates codec))
+        (set-avcodec-context-sample-rate!
+         ctx
+         (if supported-samplerates
+             (let loop ([rate #f]
+                        [offset 0])
+               (define new-rate (ptr-ref (avcodec-supported-samplerates codec)
+                                         offset))
+               (cond [(= new-rate 44100) new-rate]
+                     [(= new-rate 0) (or rate 44100)]
+                     [else (loop (or rate new-rate) (add1 offset))]))
+             44100))
+        (define supported-layouts (avcodec-channel-layouts codec))
+        (set-avcodec-context-channel-layout!
+         ctx
+         (if supported-layouts
+             (let loop ([layout #f]
+                        [offset 0])
+               (define new-layout (ptr-ref (avcodec-channel-layouts codec)
+                                           offset))
+               (cond [(set-member? new-layout 'stereo) 'stereo]
+                     [(set-empty? new-layout) (or layout 'stereo)]
+                     [else (loop (or layout new-layout) (add1 offset))]))
+             'stereo))
+        (set-avcodec-context-channels!
+         ctx (av-get-channel-layout-nb-channels (avcodec-context-channel-layout ctx)))
+        (set-avstream-time-base! str (/ 1 (avcodec-context-sample-rate ctx)))]
+       ['write (error "TODO")]
+       ['close (error "TODO")])]))
+
 ;; Video
 (define frame (av-frame-alloc))
 (define frame-rgb (av-frame-alloc))
@@ -94,12 +171,12 @@
 (define c #f)
 
 ;; Aduio
-(define audio-queue (mk-audioqueue))
+(define audio-queue (mk-packetqueue))
 (define swr #f)
 (define audio-context #f)
 (define audio-procs #f)
 
-(stream-file
+(decoder-stream
  "/Users/leif/demo2.mp4"
  #:video-callback (λ (mode obj packet)
                     (match obj
@@ -178,7 +255,10 @@
                           (set! swr (swr-alloc))
                           (av-opt-set-int
                            swr "in_channel_layout" (avcodec-context-channel-layout codec-context) 0)
-                          (av-opt-set-int swr "out_channel_layout" (cast 'sterio _av-ch _int) 0)
+                          (av-opt-set-int swr
+                                          "out_channel_layout"
+                                          (cast 'sterio _av-channel-layout _int)
+                                          0)
                           (av-opt-set-int
                            swr "in_sample_rate" (avcodec-context-sample-rate codec-context) 0)
                           (av-opt-set-int
@@ -189,7 +269,7 @@
                           (set! audio-procs
                                 (stream-play/unsafe
                                  audio-callback 0.2 (avcodec-context-sample-rate codec-context)))]
-                         ['loop (audioqueue-put audio-queue packet)]
+                         ['loop (packetqueue-put audio-queue packet)]
                          ['close (void)])])))
 
 (av-frame-free frame)
