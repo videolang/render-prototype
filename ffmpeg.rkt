@@ -188,12 +188,13 @@
        [('video 'init)
         (set-avcodec-context-codec-id! ctx id)
         (set-avcodec-context-bit-rate! ctx 400000)
-        (set-avcodec-context-width! ctx 1920)
-        (set-avcodec-context-height! ctx 1080)
+        (set-avcodec-context-width! ctx 1280);1920)
+        (set-avcodec-context-height! ctx 720);1080)
         (set-avcodec-context-time-base! ctx 25)
         (set-avstream-time-base! stream 25)
         (set-avcodec-context-gop-size! ctx 12)
         (set-avcodec-context-pix-fmt! ctx 'yuv420p)
+        (set-avcodec-context-color-range! ctx 'mpeg)
         (when (eq? id 'mpeg2video)
           (set-avcodec-context-max-b-frames! ctx 2))
         (when (eq? id 'mpeg1video)
@@ -234,6 +235,7 @@
         (set-avstream-time-base! stream (/ 1 (avcodec-context-sample-rate ctx)))]
        [('video 'write)
         data]
+       #;
        [('audio 'write)
         eof]
        [(_ _)
