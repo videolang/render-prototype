@@ -186,6 +186,7 @@
                          [id id]))
      (match* (type mode)
        [('video 'init)
+        ;; Writing output
         (set-avcodec-context-codec-id! ctx id)
         (set-avcodec-context-bit-rate! ctx 400000)
         (set-avcodec-context-width! ctx 1280);1920)
@@ -198,7 +199,40 @@
         (when (eq? id 'mpeg2video)
           (set-avcodec-context-max-b-frames! ctx 2))
         (when (eq? id 'mpeg1video)
-          (set-avcodec-context-mb-decision! ctx 2))]
+          (set-avcodec-context-mb-decision! ctx 2))
+
+        ;; Displaying output
+        (set! num-bytes
+              (av-image-get-buffer-size'rgb24
+                                       (avcodec-context-width ctx)
+                                       (avcodec-context-height ctx)
+                                       32))
+        (set! buff (av-malloc num-bytes _uint8))
+        (av-image-fill-arrays (av-frame-data frame-rgb)
+                              (av-frame-linesize frame-rgb)
+                              (array-ptr buff)
+                              'rgb24
+                              (avcodec-context-width ctx)
+                              (avcodec-context-height ctx)
+                              1)
+        (set! sws
+              (sws-getContext (avcodec-context-width ctx)
+                              (avcodec-context-height ctx)
+                              (avcodec-context-pix-fmt ctx)
+                              (avcodec-context-width ctx)
+                              (avcodec-context-height ctx)
+                              'rgb24
+                              SWS-BILINEAR
+                              #f #f #f))
+        (set! f (new frame%
+                     [label "Movie"]
+                     [width (avcodec-context-width ctx)]
+                     [height (avcodec-context-height ctx)]))
+        (set! c (new video-canvas%
+                     [width (avcodec-context-width ctx)]
+                     [height (avcodec-context-height ctx)]
+                     [parent f]))
+        (send f show #t)]
        [('audio 'init)
         (set-avcodec-context-sample-fmt!
          ctx (if (avcodec-sample-fmts codec)
@@ -234,6 +268,38 @@
          ctx (av-get-channel-layout-nb-channels (avcodec-context-channel-layout ctx)))
         (set-avstream-time-base! stream (/ 1 (avcodec-context-sample-rate ctx)))]
        [('video 'write)
+        ;(define codec-context ctx)
+        (define old-obj (queue-callback-data-codec-obj (codec-obj-callback-data obj)))
+        (define codec-context (codec-obj-codec-context old-obj))
+        (define packet data)
+        ;; Display output
+        (with-handlers ([exn:ffmpeg:again? void]
+                        [exn:ffmpeg:eof? void])
+          (avcodec-send-packet codec-context packet)
+          (avcodec-receive-frame codec-context frame)
+          (sws-scale sws
+                     (array-ptr (av-frame-data frame))
+                     (array-ptr (av-frame-linesize frame))
+                     0
+                     (avcodec-context-height codec-context)
+                     (array-ptr (av-frame-data frame-rgb))
+                     (array-ptr (av-frame-linesize frame-rgb)))
+          (define linesize (array-ref (av-frame-linesize frame-rgb) 0))
+          (send c draw-frame
+                (λ ()
+                  (for ([i (in-range (avcodec-context-height codec-context))])
+                    (glTexSubImage2D
+                     GL_TEXTURE_2D
+                     0
+                     0
+                     i
+                     (avcodec-context-width codec-context)
+                     1
+                     GL_RGB
+                     GL_UNSIGNED_BYTE
+                     (ptr-add (array-ref (av-frame-data frame-rgb) 0)
+                              (* i linesize)))))))
+        ;; Write output
         data]
        #;
        [('audio 'write)
@@ -243,6 +309,7 @@
 
 (define in-bundle (file->stream-bundle "/Users/leif/demo2.mp4"))
 (demux-stream in-bundle
+              #:close-context? #f
               #:by-index-callback (queue-stream))
 (define out-bundle (bundle-for-file "/Users/leif/test.mp4"
                                     in-bundle))
