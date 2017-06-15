@@ -31,7 +31,7 @@
 (define frame (av-frame-alloc))
 (define frame-rgb (alloc-picture 'yuv420p out-width out-height))
 ;(define buff #f)
-(define sws #f)
+;(define sws #f)
 
 (define (encode-proc mode obj data queue-ctx)
   (match obj
@@ -55,6 +55,7 @@
           (set-avcodec-context-max-b-frames! ctx 2))
         (when (eq? id 'mpeg1video)
           (set-avcodec-context-mb-decision! ctx 2))
+        #|
         (define num-bytes
           (av-image-get-buffer-size 'yuv420p
                                     (avcodec-context-width ctx)
@@ -76,7 +77,8 @@
                               (avcodec-context-height ctx)
                               (avcodec-context-pix-fmt ctx)
                               'bicubic
-                              #f #f #f))]
+                              #f #f #f))
+        |#]
        [('audio 'init)
         (set-avcodec-context-sample-fmt!
          ctx (if (avcodec-sample-fmts codec)
@@ -116,6 +118,7 @@
         (avcodec-receive-frame queue-ctx frame)
         (av-frame-make-writable frame-rgb)
         (displayln (av-frame-get-color-range frame))
+        #|
         (sws-scale sws
                    (array-ptr (av-frame-data frame))
                    (array-ptr (av-frame-linesize frame))
@@ -123,6 +126,7 @@
                    (avcodec-context-height queue-ctx)
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
+|#
         (displayln "the")
         ;(av-packet-unref data)
         (displayln "flush")
