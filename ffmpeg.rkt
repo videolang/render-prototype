@@ -31,7 +31,7 @@
 (define frame (av-frame-alloc))
 (define frame-rgb (alloc-picture 'yuv420p out-width out-height))
 ;(define buff #f)
-;(define sws #f)
+(define sws #f)
 
 (define (encode-proc mode obj data queue-ctx)
   (match obj
@@ -39,7 +39,8 @@
                          [stream stream]
                          [codec-context ctx]
                          [codec codec]
-                         [id id]))
+                         [id id]
+                         [next-pts next-pts]))
      (match* (type mode)
        [('video 'init)
         (set-avcodec-context-codec-id! ctx id)
@@ -69,6 +70,7 @@
                               (avcodec-context-width ctx)
                               (avcodec-context-height ctx)
                               1)
+|#
         (set! sws
               (sws-getContext (avcodec-context-width queue-ctx)
                               (avcodec-context-height queue-ctx)
@@ -78,7 +80,7 @@
                               (avcodec-context-pix-fmt ctx)
                               'bicubic
                               #f #f #f))
-        |#]
+        ]
        [('audio 'init)
         (set-avcodec-context-sample-fmt!
          ctx (if (avcodec-sample-fmts codec)
@@ -114,11 +116,12 @@
          ctx (av-get-channel-layout-nb-channels (avcodec-context-channel-layout ctx)))
         (set-avstream-time-base! stream (/ 1 (avcodec-context-sample-rate ctx)))]
        [('video 'write)
-        (avcodec-send-packet queue-ctx data)
-        (avcodec-receive-frame queue-ctx frame)
-        (av-frame-make-writable frame-rgb)
-        (displayln (av-frame-get-color-range frame))
-        #|
+        (cond
+          [(eof-object? data) data]
+          [else
+           (avcodec-send-packet queue-ctx data)
+           (avcodec-receive-frame queue-ctx frame)
+           (av-frame-make-writable frame-rgb)
         (sws-scale sws
                    (array-ptr (av-frame-data frame))
                    (array-ptr (av-frame-linesize frame))
@@ -126,18 +129,14 @@
                    (avcodec-context-height queue-ctx)
                    (array-ptr (av-frame-data frame-rgb))
                    (array-ptr (av-frame-linesize frame-rgb)))
-|#
-        (displayln "the")
         ;(av-packet-unref data)
-        (displayln "flush")
-        ;(set-av-frame-pts! frame 0)
-        (displayln (av-frame-pts frame))
-        (displayln (av-frame-format/video frame-rgb))
-        (avcodec-send-frame ctx frame-rgb)
-        (displayln "Out")
-        (let loop ()
-          (with-handlers ([exn:ffmpeg:again? (λ (e) '())])
-            (cons (avcodec-receive-packet ctx) (loop))))]
+           (set-av-frame-pts! frame next-pts)
+           (set-codec-obj-next-pts!
+            obj (add1 (codec-obj-next-pts obj)))
+           (avcodec-send-frame ctx frame-rgb)
+           (let loop ()
+             (with-handlers ([exn:ffmpeg:again? (λ (e) '())])
+               (cons (avcodec-receive-packet ctx) (loop))))])]
        [(_ _)
         data])]))
 
