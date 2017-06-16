@@ -15,15 +15,15 @@
          video/private/packetqueue
          video/private/video-canvas)
 
-(define out-width 1280)
-(define out-height 720)
+(define out-width 1920)
+(define out-height 1080)
 
 (define (alloc-picture fmt w h)
   (define frame (av-frame-alloc))
   (set-av-frame-format/video! frame fmt)
   (set-av-frame-width! frame w)
   (set-av-frame-height! frame h)
-  ;(av-frame-set-color-range frame 'mpeg)
+  (av-frame-set-color-range frame 'mpeg)
   (av-frame-get-buffer frame 32)
   frame)
 
@@ -122,15 +122,15 @@
            (avcodec-send-packet queue-ctx data)
            (avcodec-receive-frame queue-ctx frame)
            (av-frame-make-writable frame-rgb)
-        (sws-scale sws
-                   (array-ptr (av-frame-data frame))
-                   (array-ptr (av-frame-linesize frame))
-                   0
-                   (avcodec-context-height queue-ctx)
-                   (array-ptr (av-frame-data frame-rgb))
-                   (array-ptr (av-frame-linesize frame-rgb)))
-        ;(av-packet-unref data)
-           (set-av-frame-pts! frame next-pts)
+           (sws-scale sws
+                      (array-ptr (av-frame-data frame))
+                      (array-ptr (av-frame-linesize frame))
+                      0
+                      (avcodec-context-height queue-ctx)
+                      (array-ptr (av-frame-data frame-rgb))
+                      (array-ptr (av-frame-linesize frame-rgb)))
+           (av-packet-unref data)
+           (set-av-frame-pts! frame-rgb next-pts)
            (set-codec-obj-next-pts!
             obj (add1 (codec-obj-next-pts obj)))
            (avcodec-send-frame ctx frame-rgb)
