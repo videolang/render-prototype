@@ -11,7 +11,7 @@
          opengl/util
          portaudio
          video/private/ffmpeg
-         video/private/ffmpeg-stream
+         video/private/ffmpeg-pipeline
          video/private/packetqueue
          video/private/video-canvas)
 
@@ -140,12 +140,20 @@
        [(_ _)
         data])]))
 
-(define in-bundle (file->stream-bundle "/Users/leif/demo2.mp4"))
-(demux-stream in-bundle
-              #:by-index-callback (queue-stream))
-(define out-bundle (bundle-for-file "/Users/leif/test.mp4"
-                                    in-bundle))
-(mux-stream out-bundle
-            #:by-index-callback (dequeue-stream
-                                 #:passthrough-proc encode-proc))
-
+(link (λ () (file->stream-bundle "/Users/leif/demo2.mp4"))
+      (λ (in-bundle) (bundle-for-file "/Users/leif/test.mp4"
+                                      (mk-stream-bundle
+                                       #:locked? #f
+                                       #:streams
+                                       (for/list ([i (stream-bundle-streams in-bundle)])
+                                         (cond
+                                           [(eq? (codec-obj-type i) 'video)
+                                            (mk-codec-obj #:callback-data (codec-obj-callback-data i)
+                                                          #:type 'video
+                                                          #:id 'h264)]
+                                           [(eq? (codec-obj-type i) 'audio)
+                                            i
+                                            #;(mk-codec-obj #:callback-data (codec-obj-callback-data i)
+                                                          #:type 'audio
+                                                          #:id 'aac)])))))
+      #:out-callback encode-proc)
