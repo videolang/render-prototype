@@ -6,7 +6,7 @@
                   mk-filter
                   mk-filter-node
                   mk-sink-node
-                  bundle->file)
+                  stream-bundle->file)
          graph)
 
 (current-render-graph (weighted-graph/directed '()))
@@ -25,7 +25,7 @@
 (add-directed-edge! (current-render-graph) source-node filter-node)
 
 (define sink-node
-  (mk-sink-node (bundle->file "/Users/leif/test.mp4" 'vid+aud)))
+  (mk-sink-node (stream-bundle->file "/Users/leif/test.mp4" 'vid+aud)))
 (add-vertex! (current-render-graph) sink-node)
 (add-directed-edge! (current-render-graph) filter-node sink-node)
 
