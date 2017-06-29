@@ -12,6 +12,7 @@
 (current-render-graph (weighted-graph/directed '()))
 
 (define file
+  ;(make-file #:path "/Users/leif/demo2.mp4")
   (make-playlist
    #:elements (list
                (make-file #:path "/Users/leif/demo2.mp4")
