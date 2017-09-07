@@ -8,5 +8,3 @@
 (define ctx (avformat-alloc-context))
 (with-handlers ([exn? (λ (e) (void))])
   (avformat-open-input ctx "" fmt (build-av-dict (hash "list_devices" "true"))))
-
-(sleep 3)
