@@ -1,10 +1,12 @@
 #lang racket
 
 (require racket/logging
+         video/private/devices
          video/private/ffmpeg/main
          video/private/ffmpeg-pipeline
          video/private/init)
 
+#|
 (struct device-list (video
                      audio)
   #:transparent)
@@ -43,5 +45,6 @@
     (string->symbol "AVFoundation input device"))
   (device-list (reverse (unbox video-list))
                (reverse (unbox audio-list))))
+|#
 
 (list-input-devices)
