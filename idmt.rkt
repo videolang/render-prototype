@@ -172,10 +172,12 @@
 
 (define-idmt widget$ base$
   (super-new)
-  (init-field [font normal-control-font]
-              [vert-margin 2]
-              [horiz-margin 2])
-  (define-public-state style '()))
+  (init-field [font normal-control-font])
+  (define-public-state vert-margin 2)
+  (define-public-state horiz-margin 2)
+  (define-public-state style '())
+  (define/override (get-min-extent)
+    (values (* 2 vert-margin) (* 2 horiz-margin))))
 
 (define-idmt list-widget$ widget$
   (super-new)
@@ -189,13 +191,17 @@
   (super-new)
   (inherit-field idmt-list)
   (define/override (get-min-extent)
-    (for/fold ([width 0]
-               [height 0])
-              ([i (in-list idmt-list)])
-      (define-values (w h)
-        (send i get-min-extent))
-      (values (max w width)
-              (+ h height))))
+    (define-values (base-w base-h)
+      (super get-min-extent))
+    (define-values (w h)
+      (for/fold ([width 0]
+                 [height 0])
+                ([i (in-list idmt-list)])
+        (define-values (w h)
+          (send i get-min-extent))
+        (values (max w width)
+                (+ h height))))
+    (values (+ base-w w) (+ base-h h)))
   (define/override (draw dc x y w h)
     (define item-height (/ h (length idmt-list)))
     (for/fold ([y y])
@@ -205,30 +211,61 @@
     (void)))
 
 (define-idmt horizontal-block$ list-widget$
-  (super-new))
+  (super-new)
+  (inherit-field idmt-list)
+  (define/override (get-min-extent)
+    (for/fold ([width 0]
+               [height 0])
+              ([i (in-list idmt-list)])
+      (define-values (w h)
+        (send i get-min-extent))
+      (values (+ w width)
+              (max h height))))
+  (define/override (draw dc x y w h)
+    (define item-width (/ w (length idmt-list)))
+    (for/fold ([x x])
+              ([i (in-list idmt-list)])
+      (send i draw dc x y item-width h)
+      (values (+ x item-width)))
+    (void)))
 
 (define-idmt label$ widget$
   (super-new)
-  (inherit-field font)
+  (inherit-field font
+                 horiz-margin
+                 vert-margin)
   (init [(internal-text text) #f])
   (define-state text internal-text)
   (define/override (get-min-extent)
+    (define-values (b-w b-h)
+      (super get-min-extent))
     (define pic (pict:text (or text "---") font))
-    (values (pict-width pic) (pict-height pic)))
+    (values (+ b-w (pict-width pic)) (+ b-h (pict-height pic))))
   (define/override (draw dc x y w h)
     (define old-font (send dc get-font))
     (send dc set-font font)
-    (send dc draw-text (or text "---") x y)
+    (send dc draw-text (or text "---") (+ horiz-margin x) (+ vert-margin y))
     (send dc set-font old-font)))
 
 (define-idmt button$ widget$
   (super-new)
+  (inherit-field horiz-margin
+                 vert-margin)
   (init [(internal-label label) (new label$)])
   (define-state label internal-label)
   (define/override (get-min-extent)
-    (send label get-min-extent))
+    (define-values (b-w b-h)
+      (super get-min-extent))
+    (define-values (w h)
+      (send label get-min-extent))
+    (values (+ b-w w) (+ b-h h)))
   (define/override (draw dc x y w h)
-    (send label draw dc x y w h)))
+    (send dc draw-rectangle
+          (+ x horiz-margin) (+ y vert-margin)
+          (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))
+    (send label draw dc
+          (+ x horiz-margin) (+ y vert-margin)
+          (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))))
 
 (define-idmt field$ widget$
   (super-new))
@@ -238,8 +275,11 @@
 (send idmt add-idmt (new label$ [text "Hello"]))
 (send idmt add-idmt (new label$ [text "World"]))
 (send idmt add-idmt (new label$ [text "I am an IDMT!!!"]))
+(send idmt add-idmt (new button$ [label (new label$ [text "CLICK ME!"])]))
 (new idmt-canvas%
      [parent f]
      [idmt idmt])
 (send f show #t)
-(serialize idmt)
+;(serialize idmt)
+;(deserialize (serialize idmt))
+
