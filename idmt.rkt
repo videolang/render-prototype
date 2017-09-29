@@ -166,20 +166,27 @@
   (init [(internal-text text) #f])
   (define-state text internal-text)
   (define/override (get-min-extent)
-    (define pic (pict:text text font))
+    (define pic (pict:text (or text "---") font))
     (values (pict-width pic) (pict-height pic)))
   (define/override (draw dc x y w h)
     (define old-font (send dc get-font))
     (send dc set-font font)
-    (send dc draw-text text x y)
+    (send dc draw-text (or text "---") x y)
     (send dc set-font old-font)))
 
 (define-idmt button$ widget$
-  (super-new))
+  (super-new)
+  (init [(internal-label label) (new label$)])
+  (define-state label internal-label)
+  (define/override (get-min-extent)
+    (send label get-min-extent))
+  (define/override (draw dc x y w h)
+    (send label draw dc x y w h)))
 
 (define-idmt field$ widget$
   (super-new))
 
-(new label$ [text "Hello"])
-(serialize (new label$ [text "Hello"]))
-(deserialize (serialize (new label$ [text "Hello"])))
+;(new label$ [text "Hello"])
+;(serialize (new label$ [text "Hello"]))
+;(deserialize (serialize (new label$ [text "Hello"])))
+(new button$)
