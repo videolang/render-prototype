@@ -3,11 +3,15 @@
 (provide (all-defined-out))
 (require file/convertible
          pict
+         (prefix-in pict: pict)
          racket/list
+         racket/math
          racket/draw
          racket/class
          racket/gui/base
          racket/serialize
+         racket/stxparam
+         racket/splicing
          (for-syntax racket/base
                      racket/syntax
                      syntax/parse))
@@ -23,21 +27,28 @@
     #:literals (define-public-state)
     (pattern (define-public-state name body ...))))
 
+(define-syntax-parameter defstate-parameter
+  (syntax-parser
+    [(_ stx who)
+     (raise-syntax-error #'who "Use outside of define-idmt is an error" this-syntax)]))
+
 (define-syntax (define-state stx)
   (syntax-parse stx
     [x:defstate
-     (raise-syntax-error 'define-state "Use outside of define-idmt is an error" stx)]))
+     #`(defstate-parameter #,stx define-state)]))
 
 (define-syntax (define-public-state stx)
   (syntax-parse stx
     [x:defstate
-     (raise-syntax-error 'define-public-state "Use outside of define-idmt is an error" stx)]))
+     #`(defstate-parameter #,stx define-public-state)]))
 
 (define-syntax (~define-idmt stx)
  (syntax-parse stx
     [(_ orig-stx name:id sup (interfaces ...)
         (~optional (~seq #:base? b?) #:defaults ([b? #'#f]))
-        (~or state:defstate public-state:defpubstate body) ...)
+        (~and
+         (~seq (~or state:defstate public-state:defpubstate internal-body) ...)
+         (~seq body ...)))
      #:with name-deserialize (format-id stx "~a:deserialize" #'name)
      (define serialize-method (gensym 'serialize))
      (define deserialize-method (gensym 'deserialize))
@@ -48,51 +59,56 @@
          (define-member-name #,deserialize-method deserial-key)
          (define name-deserialize
            (make-deserialize-info
-            (λ (super table public)
+            (λ (sup table public-table)
               (define this (new name))
-              (send this #,deserialize-method super table public))
+              (send this #,deserialize-method (vector sup table public-table))
+              this)
             (λ ()
               (error "Not implemented yet. :("))))
-         (define name
-           (class/derived
-            orig-stx
-            (name
-             sup
-             ((interface* () ([prop:serializable
-                               (make-serialize-info
-                                (λ (this)
-                                  (send this #,serialize-method))
-                                #'name-deserialize
-                                #t
-                                (or (current-load-relative-directory) (current-directory)))]))
-              interfaces ...)
-             #f)
-            (define (#,serialize-method)
-             (vector #,(if base?
-                           #'#f
-                           #`(super #,serialize-method))
-                     (make-immutable-hash
-                      `#,(for/list ([i (in-list (attribute state.name))])
-                           #`(#,(syntax->datum i) ,#,i)))
-                     (make-immutable-hash
-                      `#,(for/list ([i (in-list (attribute public-state.name))])
-                           #`(#,(syntax->datum i) ,#,i)))))
-            (#,(if base? #'public #'override) #,serialize-method)
-            (define (#,deserialize-method data)
-              (define sup (first data))
-              (define table (second data))
-              (define public-table (third data))
-              #,(if base?
-                    #`(void)
-                    #`(super #,deserialize-method))
-              #,@(for/list ([i (in-list (attribute state.name))])
-                   #`(set! #,i (hash-ref table #,(syntax->datum i))))
-              #,@(for/list ([i (in-list (attribute state.name))])
-                   #`(set! #,i (hash-ref public-table #,(syntax->datum i)))))
-            (#,(if base? #'public #'override) #,deserialize-method)
-            (define state.name state.body ...) ...
-            (field [public-state.name public-state.body ...] ...)
-            body ...)))]))
+         (splicing-syntax-parameterize ([defstate-parameter
+                                          (syntax-parser
+                                            [(_ st:defstate who)
+                                             #'(define st.name st.body (... ...))]
+                                            [(_ st:defpubstate who)
+                                             #'(field [st.name st.body (... ...)])])])
+           (define name
+             (class/derived
+              orig-stx
+              (name
+               sup
+               ((interface* () ([prop:serializable
+                                 (make-serialize-info
+                                  (λ (this)
+                                    (send this #,serialize-method))
+                                  #'name-deserialize
+                                  #t
+                                  (or (current-load-relative-directory) (current-directory)))]))
+                interfaces ...)
+               #f)
+              (define (#,serialize-method)
+                (vector #,(if base?
+                              #'#f
+                              #`(super #,serialize-method))
+                        (make-immutable-hash
+                         `#,(for/list ([i (in-list (attribute state.name))])
+                              #`(#,(syntax->datum i) . ,#,i)))
+                        (make-immutable-hash
+                         `#,(for/list ([i (in-list (attribute public-state.name))])
+                              #`(#,(syntax->datum i) . ,#,i)))))
+              (#,(if base? #'public #'override) #,serialize-method)
+              (define (#,deserialize-method data)
+                (define sup (vector-ref data 0))
+                (define table (vector-ref data 1))
+                (define public-table (vector-ref data 2))
+                #,(if base?
+                      #`(void)
+                      #`(super #,deserialize-method sup))
+                #,@(for/list ([i (in-list (attribute state.name))])
+                     #`(set! #,i (hash-ref table '#,(syntax->datum i))))
+                #,@(for/list ([i (in-list (attribute public-state.name))])
+                     #`(set! #,i (hash-ref public-table '#,(syntax->datum i)))))
+              (#,(if base? #'public #'override) #,deserialize-method)
+              body ...))))]))
 
 (define-syntax (define-idmt* stx)
   (syntax-parse stx
@@ -117,8 +133,8 @@
        (case format
          [(png-bytes)
           (define-values (w* h*) (send this get-min-extent))
-          (define w (max w* 1))
-          (define h (max h* 1))
+          (define w (exact-ceiling (max w* 1)))
+          (define h (exact-ceiling (max h* 1)))
           (define bit (make-object bitmap% w h))
           (send this draw (new bitmap-dc% [bitmap bit]) 0 0 w h)
           (define s (open-output-bytes))
@@ -130,7 +146,6 @@
    draw))
 
 (define-base-idmt* base$ object% (idmt<$>)
-  (init-field [font normal-control-font])
   (super-new)
   (define/public (add-data key val)
     (void))
@@ -141,17 +156,30 @@
   (define/public (get-max-extent)
     (values +inf.0 +inf.0)))
 
-(define-idmt label$ base$
-  (init [(internal-text text)])
+(define-idmt widget$ base$
+  (super-new)
+  (init-field [font normal-control-font]))
+
+(define-idmt label$ widget$
   (super-new)
   (inherit-field font)
-  (define-state text internal-text))
+  (init [(internal-text text) #f])
+  (define-state text internal-text)
+  (define/override (get-min-extent)
+    (define pic (pict:text text font))
+    (values (pict-width pic) (pict-height pic)))
+  (define/override (draw dc x y w h)
+    (define old-font (send dc get-font))
+    (send dc set-font font)
+    (send dc draw-text text x y)
+    (send dc set-font old-font)))
 
-(define-idmt button$ base$
+(define-idmt button$ widget$
   (super-new))
 
-(define-idmt field$ base$
+(define-idmt field$ widget$
   (super-new))
 
-;(new label$ [text "Hello"])
+(new label$ [text "Hello"])
 (serialize (new label$ [text "Hello"]))
+(deserialize (serialize (new label$ [text "Hello"])))
