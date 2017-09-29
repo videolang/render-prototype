@@ -168,7 +168,11 @@
     (super-new [min-width (exact-ceiling min-width)]
                [min-height (exact-ceiling min-height)]
                [paint-callback (λ (c dc)
-                                 (send idmt draw dc 0 0 (send c get-width) (send c get-height)))])))
+                                 (send idmt draw dc 0 0 (send c get-width) (send c get-height)))])
+    (define/override (on-event event)
+      (send idmt on-mouse-event event))
+    (define/override (on-char event)
+      (send idmt on-keyboard-event event))))
 
 (define-idmt widget$ base$
   (super-new)
@@ -208,19 +212,27 @@
               ([i (in-list idmt-list)])
       (send i draw dc x y w item-height)
       (values (+ y item-height)))
+    (void))
+  (define/override (on-mouse-event event)
+    (define x (send event get-x))
+    (define y (send event get-y))
     (void)))
 
 (define-idmt horizontal-block$ list-widget$
   (super-new)
   (inherit-field idmt-list)
   (define/override (get-min-extent)
-    (for/fold ([width 0]
-               [height 0])
-              ([i (in-list idmt-list)])
-      (define-values (w h)
-        (send i get-min-extent))
-      (values (+ w width)
-              (max h height))))
+    (define-values (b-w b-h)
+      (super get-min-extent))
+    (define-values (w h)
+      (for/fold ([width 0]
+                 [height 0])
+                ([i (in-list idmt-list)])
+        (define-values (w h)
+          (send i get-min-extent))
+        (values (+ w width)
+                (max h height))))
+    (values (+ b-w w) (+ b-h h)))
   (define/override (draw dc x y w h)
     (define item-width (/ w (length idmt-list)))
     (for/fold ([x x])
@@ -252,7 +264,13 @@
   (inherit-field horiz-margin
                  vert-margin)
   (init [(internal-label label) (new label$)])
+  (define mouse-state 'up)
   (define-state label internal-label)
+  (define-state up-color "WhiteSmoke")
+  (define-state down-color "Gainsboro")
+  (define-state hover-color "LightGray")
+  (define/override (on-mouse-event event)
+    (displayln "button mouse event"))
   (define/override (get-min-extent)
     (define-values (b-w b-h)
       (super get-min-extent))
@@ -280,6 +298,5 @@
      [parent f]
      [idmt idmt])
 (send f show #t)
-;(serialize idmt)
+(serialize idmt)
 ;(deserialize (serialize idmt))
-
