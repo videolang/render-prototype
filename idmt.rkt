@@ -39,7 +39,7 @@
 
 (define-syntax (define-public-state stx)
   (syntax-parse stx
-    [x:defstate
+    [x:defpubstate
      #`(defstate-parameter #,stx define-public-state)]))
 
 (define-syntax (~define-idmt stx)
@@ -153,12 +153,59 @@
     (void))
   (define/public (get-min-extent)
     (values 0 0))
+  (define/public (on-mouse-event event)
+    (void))
+  (define/public (on-keyboard-event event)
+    (void))
   (define/public (get-max-extent)
     (values +inf.0 +inf.0)))
 
+(define idmt-canvas%
+  (class canvas%
+    (init-field idmt)
+    (define-values (min-width min-height)
+      (send idmt get-min-extent))
+    (super-new [min-width (exact-ceiling min-width)]
+               [min-height (exact-ceiling min-height)]
+               [paint-callback (λ (c dc)
+                                 (send idmt draw dc 0 0 (send c get-width) (send c get-height)))])))
+
 (define-idmt widget$ base$
   (super-new)
-  (init-field [font normal-control-font]))
+  (init-field [font normal-control-font]
+              [vert-margin 2]
+              [horiz-margin 2])
+  (define-public-state style '()))
+
+(define-idmt list-widget$ widget$
+  (super-new)
+  (define-public-state idmt-list '())
+  (define/public (add-idmt idmt)
+    (set! idmt-list (append idmt-list (list idmt))))
+  (define/public (remove-idmt idmt)
+    (set! idmt-list (take idmt-list (sub1 (length idmt-list))))))
+
+(define-idmt vertical-block$ list-widget$
+  (super-new)
+  (inherit-field idmt-list)
+  (define/override (get-min-extent)
+    (for/fold ([width 0]
+               [height 0])
+              ([i (in-list idmt-list)])
+      (define-values (w h)
+        (send i get-min-extent))
+      (values (max w width)
+              (+ h height))))
+  (define/override (draw dc x y w h)
+    (define item-height (/ h (length idmt-list)))
+    (for/fold ([y y])
+              ([i (in-list idmt-list)])
+      (send i draw dc x y w item-height)
+      (values (+ y item-height)))
+    (void)))
+
+(define-idmt horizontal-block$ list-widget$
+  (super-new))
 
 (define-idmt label$ widget$
   (super-new)
@@ -186,7 +233,13 @@
 (define-idmt field$ widget$
   (super-new))
 
-;(new label$ [text "Hello"])
-;(serialize (new label$ [text "Hello"]))
-;(deserialize (serialize (new label$ [text "Hello"])))
-(new button$)
+(define f (new frame% [label "IDMT"]))
+(define idmt (new vertical-block$))
+(send idmt add-idmt (new label$ [text "Hello"]))
+(send idmt add-idmt (new label$ [text "World"]))
+(send idmt add-idmt (new label$ [text "I am an IDMT!!!"]))
+(new idmt-canvas%
+     [parent f]
+     [idmt idmt])
+(send f show #t)
+(serialize idmt)
