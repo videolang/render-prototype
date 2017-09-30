@@ -12,6 +12,7 @@
          racket/serialize
          racket/stxparam
          racket/splicing
+         racket/match
          (for-syntax racket/base
                      racket/syntax
                      syntax/parse))
@@ -162,12 +163,18 @@
          [else default]))])
    get-min-extent
    get-max-extent
+   set-current-extent
+   get-current-extent
    draw
    on-mouse-event
    on-keyboard-event))
 
 (define-base-idmt* base$ object% (idmt<$>)
   (super-new)
+  (define-state x #f)
+  (define-state y #f)
+  (define-state width #f)
+  (define-state height #f)
   (define/public (add-data key val)
     (void))
   (define/public (draw dc x y w h)
@@ -179,7 +186,14 @@
   (define/public (on-keyboard-event event)
     (void))
   (define/public (get-max-extent)
-    (values +inf.0 +inf.0)))
+    (values +inf.0 +inf.0))
+  (define/public (set-current-extent nx ny nw nh)
+    (set! x nx)
+    (set! y ny)
+    (set! width nw)
+    (set! height nh))
+  (define/public (get-current-extent)
+    (values x y width height)))
 
 (define idmt-canvas%
   (class canvas%
@@ -189,11 +203,14 @@
     (super-new [min-width (exact-ceiling min-width)]
                [min-height (exact-ceiling min-height)]
                [paint-callback (λ (c dc)
+                                 (send idmt set-current-extent 0 0 (send c get-width) (send c get-height))
                                  (send idmt draw dc 0 0 (send c get-width) (send c get-height)))])
     (define/override (on-event event)
-      (send idmt on-mouse-event event))
+      (send idmt on-mouse-event event)
+      (send this refresh))
     (define/override (on-char event)
-      (send idmt on-keyboard-event event))))
+      (send idmt on-keyboard-event event)
+      (send this refresh))))
 
 (define-idmt widget$ base$
   (super-new)
@@ -205,7 +222,9 @@
   (define/override (get-min-extent)
     (values (* 2 vert-margin) (* 2 horiz-margin)))
   (define/public (register-parent other)
-    (set! parent other)))
+    (set! parent other))
+  (define/public (get-child-extent child)
+    (error 'get-child-extent "IDMT does not have children")))
 
 (define-idmt list-widget$ widget$
   (super-new)
@@ -241,10 +260,18 @@
       (send i draw dc x y w item-height)
       (values (+ y item-height)))
     (void))
+  (define/override (set-current-extent x y w h)
+    (super set-current-extent x y w h)
+    (define item-height (if (empty? idmt-list) #f (/ h (length idmt-list))))
+    (for/fold ([y y])
+              ([i (in-list idmt-list)])
+      (send i set-current-extent x y w item-height)
+      (values (+ y item-height)))
+    (void))
   (define/override (on-mouse-event event)
-    (define x (send event get-x))
-    (define y (send event get-y))
-    (void)))
+    (super on-mouse-event event)
+    (for/list ([i (in-list idmt-list)])
+      (send i on-mouse-event event))))
 
 (define-idmt horizontal-block$ list-widget$
   (super-new)
@@ -298,7 +325,18 @@
   (define-state down-color "Gainsboro")
   (define-state hover-color "LightGray")
   (define/override (on-mouse-event event)
-    (displayln "button mouse event"))
+    (define-values (x y w h)
+      (send this get-current-extent))
+    (define x-max (+ x w))
+    (define y-max (+ y h))
+    (define mouse-x (send event get-x))
+    (define mouse-y (send event get-y))
+    (match mouse-state
+      [(or 'up 'hover)
+       (if (and (<= x mouse-x x-max)
+                (<= y mouse-y y-max))
+           (set! mouse-state 'hover)
+           (set! mouse-state 'up))]))
   (define/override (get-min-extent)
     (define-values (b-w b-h)
       (super get-min-extent))
@@ -306,12 +344,26 @@
       (send label* get-min-extent))
     (values (+ b-w w) (+ b-h h)))
   (define/override (draw dc x y w h)
+    (define old-brush (send dc get-brush))
+    (send dc set-brush
+          (new brush% [color (make-object color%
+                               (match mouse-state
+                                 ['up up-color]
+                                 ['hover hover-color]
+                                 ['down down-color]))]))
     (send dc draw-rectangle
           (+ x horiz-margin) (+ y vert-margin)
           (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))
     (send label* draw dc
           (+ x horiz-margin) (+ y vert-margin)
-          (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))))
+          (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))
+    (send dc set-brush old-brush)))
+
+(define-idmt toggle$ widget$
+  (super-new))
+
+(define-idmt radio$ list-widget$
+  (super-new))
 
 (define-idmt field$ widget$
   (super-new))
