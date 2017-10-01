@@ -4,6 +4,7 @@
 (require file/convertible
          pict
          (prefix-in pict: pict)
+         racket/set
          racket/list
          racket/math
          racket/draw
@@ -322,8 +323,9 @@
   (define mouse-state 'up)
   (define-state label* internal-label)
   (define-state up-color "WhiteSmoke")
-  (define-state down-color "Gainsboro")
-  (define-state hover-color "LightGray")
+  (define-state hover-color "Gainsboro")
+  (define-state down-color "LightGray")
+  (define-state receivers (mutable-set))
   (define/override (on-mouse-event event)
     (define-values (x y w h)
       (send this get-current-extent))
@@ -331,12 +333,30 @@
     (define y-max (+ y h))
     (define mouse-x (send event get-x))
     (define mouse-y (send event get-y))
-    (match mouse-state
-      [(or 'up 'hover)
-       (if (and (<= x mouse-x x-max)
-                (<= y mouse-y y-max))
+    (define in-button?
+      (and (<= x mouse-x x-max)
+           (<= y mouse-y y-max)))
+    (match (send event get-event-type)
+      ['left-down
+       (when (and in-button? (eq? mouse-state 'hover))
+         (set! mouse-state 'down))]
+      ['left-up
+       (when (and in-button? (eq? mouse-state 'down))
+         (if in-button?
+             (set! mouse-state 'hover)
+             (set! mouse-state 'up))
+         (for ([r (in-set receivers)])
+           (send r signal this)))]
+      ['motion
+       (match mouse-state
+         [(or 'up 'hover)
+          (if in-button?
            (set! mouse-state 'hover)
-           (set! mouse-state 'up))]))
+           (set! mouse-state 'up))]
+         ['down
+          (unless in-button?
+            (set! mouse-state 'up))])]
+      [_ (void)]))
   (define/override (get-min-extent)
     (define-values (b-w b-h)
       (super get-min-extent))
@@ -357,7 +377,11 @@
     (send label* draw dc
           (+ x horiz-margin) (+ y vert-margin)
           (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))
-    (send dc set-brush old-brush)))
+    (send dc set-brush old-brush))
+  (define/public (register-receiver x)
+    (set-add! receivers x))
+  (define/public (unregister-receiver x)
+    (set-remove! receivers x)))
 
 (define-idmt toggle$ widget$
   (super-new))
