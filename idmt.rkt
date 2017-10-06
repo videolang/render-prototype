@@ -219,16 +219,19 @@
   (define/public (get-current-extent)
     (values x y width height)))
 
-(define receiver<$>
-  (interface ()
-    receive))
+(define-idmt-mixin receiver$
+  (super-new)
+  (define/public (on-receive event)
+    (void))
+  (define/public (signal event)
+    (on-receive event)))
 
 (define-idmt-mixin signaler$
   (super-new)
   (define-public-state receivers (mutable-set))
   (define/public (signal event)
     (for ([r (in-set receivers)])
-      (send r receive event)))
+      (send r signal event)))
   (define/public (register-receiver x)
     (set-add! receivers x))
   (define/public (unregister-receiver x)
@@ -237,13 +240,16 @@
 (define idmt-canvas%
   (class canvas%
     (init-field idmt)
-    (define-values (min-width min-height)
+    (define-values (init-min-width init-min-height)
       (send idmt get-min-extent))
-    (super-new [min-width (exact-ceiling min-width)]
-               [min-height (exact-ceiling min-height)]
+    (super-new [min-width (exact-ceiling init-min-width)]
+               [min-height (exact-ceiling init-min-height)]
                [paint-callback (λ (c dc)
                                  (send idmt set-current-extent 0 0 (send c get-width) (send c get-height))
-                                 (send idmt draw dc 0 0 (send c get-width) (send c get-height)))])
+                                 (send idmt draw dc 0 0 (send c get-width) (send c get-height))
+                                 (define-values (w h) (send idmt get-min-extent))
+                                 (send this min-width (exact-ceiling w))
+                                 (send this min-height (exact-ceiling h)))])
     (define/override (on-event event)
       (send idmt on-mouse-event event)
       (send this refresh))
@@ -424,12 +430,22 @@
 (define-idmt field$ widget$
   (super-new))
 
+; ==========
+
 (define f (new frame% [label "IDMT"]))
 (define idmt (new vertical-block$))
+(define counter 0)
+(define-idmt add-item$ (receiver$ base$)
+  (super-new)
+  (define/override (on-receive event)
+    (send idmt add-idmt (new label$ [text (format "Item: ~a" counter)]))
+    (set! counter (add1 counter))))
 (send idmt add-idmt (new label$ [text "Hello"]))
 (send idmt add-idmt (new label$ [text "World"]))
 (send idmt add-idmt (new label$ [text "I am an IDMT!!!"]))
-(send idmt add-idmt (new button$ [label (new label$ [text "CLICK ME!"])]))
+(define btn (new button$ [label (new label$ [text "CLICK ME!"])]))
+(send btn register-receiver (new add-item$))
+(send idmt add-idmt btn)
 (new idmt-canvas%
      [parent f]
      [idmt idmt])
