@@ -48,31 +48,38 @@
 (define-syntax (~define-idmt stx)
  (syntax-parse stx
     [(_ orig-stx name:id sup (interfaces ...)
-        (~optional (~seq #:base? b?) #:defaults ([b? #'#f]))
+        (~or (~optional (~seq #:base? b?) #:defaults ([b? #'#f]))
+             (~optional (~seq #:direct-deserialize? dd?) #:defaults ([dd? #'#t])))
+        ...
         (~and
          (~seq (~or state:defstate public-state:defpubstate internal-body) ...)
          (~seq body ...)))
-     #:with name-deserialize (format-id stx "~a:deserialize" #'name)
+     #:with name-deserialize (format-id stx "~a:fdeserialize" #'name)
+     (unless (and (attribute dd?) (eq? 'module (syntax-local-context)))
+       (raise-syntax-error #f "Must be defined at the module level" #'orig-stx))
      (define serialize-method (gensym 'serialize))
      (define deserialize-method (gensym 'deserialize))
      (define copy-method (gensym 'copy))
      (define base? (syntax-e (attribute b?)))
      #`(begin
-         (provide name-deserialize)
          (define-member-name #,serialize-method serial-key)
          (define-member-name #,deserialize-method deserial-key)
          (define-member-name #,copy-method copy-key)
-         (define name-deserialize
-           (make-deserialize-info
-            (λ (sup table public-table)
-              (define this (new name))
-              (send this #,deserialize-method (vector sup table public-table))
-              this)
-            (λ ()
-              (define pattern (new name))
-              (values pattern
-                      (λ (other)
-                        (send pattern #,copy-method other))))))
+         #,@(if (attribute dd?)
+                (list
+                 #`(provide name-deserialize)
+                 #`(define name-deserialize
+                     (make-deserialize-info
+                      (λ (sup table public-table)
+                        (define this (new name))
+                        (send this #,deserialize-method (vector sup table public-table))
+                        this)
+                      (λ ()
+                        (define pattern (new name))
+                        (values pattern
+                                (λ (other)
+                                  (send pattern #,copy-method other)))))))
+                '())
          (splicing-syntax-parameterize ([defstate-parameter
                                           (syntax-parser
                                             [(_ st:defstate who)
@@ -131,11 +138,6 @@
                 (#,(if base? #'public #'override) #,copy-method)
                 body ...)))))]))
 
-(define-syntax (define-idmt* stx)
-  (syntax-parse stx
-    [(_ name:id super (interfaces ...) body ...)
-     #`(~define-idmt #,stx name super (interfaces ...) body ...)]))
-
 (define-syntax (define-base-idmt* stx)
   (syntax-parse stx
     [(_ name:id super (interfaces ...) body ...)
@@ -143,8 +145,26 @@
 
 (define-syntax (define-idmt stx)
   (syntax-parse stx
-    [(_ name:id super body ...)
-     #`(~define-idmt #,stx name super () body ...)]))
+    [(_ name:id super
+        (~or (~optional (~seq #:interfaces (interfaces ...)) #:defaults ([(interfaces 1) '()])))
+        ...
+        body ...)
+     #`(~define-idmt #,stx name super (interfaces ...) body ...)]))
+
+(define-syntax (define-idmt-mixin stx)
+  (syntax-parse stx
+    [(_ name:id
+        (~or (~optional (~seq #:interfaces (interfaces ...)) #:defaults ([(interfaces 1) '()]))
+             (~optional (~seq #:mixins (mixins ...)) #:defaults ([(mixins 1) '()])))
+        body ...)
+     #`(begin
+         (define (name $)
+           (~define-idmt #,stx
+                         #f
+                         ((compose #,@(reverse (attribute mixins))) $)
+                         (interfaces ...)
+                         #:direct-deserialize? #f
+                         body ...)))]))
 
 (define idmt<$>
   (interface*
@@ -169,6 +189,9 @@
    draw
    on-mouse-event
    on-keyboard-event))
+
+(define receiver<$>
+  (interface receive))
 
 (define-base-idmt* base$ object% (idmt<$>)
   (super-new)
