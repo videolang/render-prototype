@@ -47,7 +47,7 @@
 
 (define-syntax (~define-idmt stx)
  (syntax-parse stx
-    [(_ orig-stx name:id sup (interfaces ...)
+    [(_ orig-stx name:id supclss (interfaces ...)
         (~or (~optional (~seq #:base? b?) #:defaults ([b? #'#f]))
              (~optional (~seq #:direct-deserialize? dd?) #:defaults ([dd? #'#t])))
         ...
@@ -55,7 +55,8 @@
          (~seq (~or state:defstate public-state:defpubstate internal-body) ...)
          (~seq body ...)))
      #:with name-deserialize (format-id stx "~a:fdeserialize" #'name)
-     (unless (and (attribute dd?) (eq? 'module (syntax-local-context)))
+     (define dd?* (syntax-e #'dd?))
+     (unless (or (not dd?*) (eq? 'module (syntax-local-context)))
        (raise-syntax-error #f "Must be defined at the module level" #'orig-stx))
      (define serialize-method (gensym 'serialize))
      (define deserialize-method (gensym 'deserialize))
@@ -65,7 +66,7 @@
          (define-member-name #,serialize-method serial-key)
          (define-member-name #,deserialize-method deserial-key)
          (define-member-name #,copy-method copy-key)
-         #,@(if (attribute dd?)
+         #,@(if dd?*
                 (list
                  #`(provide name-deserialize)
                  #`(define name-deserialize
@@ -93,7 +94,7 @@
                (class/derived
                 orig-stx
                 (name
-                 sup
+                 supclss
                  ((interface* () ([prop:serializable
                                    (make-serialize-info
                                     (λ (this)
@@ -156,15 +157,17 @@
     [(_ name:id
         (~or (~optional (~seq #:interfaces (interfaces ...)) #:defaults ([(interfaces 1) '()]))
              (~optional (~seq #:mixins (mixins ...)) #:defaults ([(mixins 1) '()])))
+        ...
         body ...)
      #`(begin
          (define (name $)
            (~define-idmt #,stx
-                         #f
+                         name
                          ((compose #,@(reverse (attribute mixins))) $)
                          (interfaces ...)
                          #:direct-deserialize? #f
-                         body ...)))]))
+                         body ...)
+           name))]))
 
 (define idmt<$>
   (interface*
@@ -189,9 +192,6 @@
    draw
    on-mouse-event
    on-keyboard-event))
-
-(define receiver<$>
-  (interface receive))
 
 (define-base-idmt* base$ object% (idmt<$>)
   (super-new)
@@ -218,6 +218,21 @@
     (set! height nh))
   (define/public (get-current-extent)
     (values x y width height)))
+
+(define receiver<$>
+  (interface ()
+    receive))
+
+(define-idmt-mixin signaler$
+  (super-new)
+  (define-public-state receivers (mutable-set))
+  (define/public (signal event)
+    (for ([r (in-set receivers)])
+      (send r receive event)))
+  (define/public (register-receiver x)
+    (set-add! receivers x))
+  (define/public (unregister-receiver x)
+    (set-remove! receivers x)))
 
 (define idmt-canvas%
   (class canvas%
@@ -338,7 +353,7 @@
     (send dc draw-text (or text* "---") (+ horiz-margin x) (+ vert-margin y))
     (send dc set-font old-font)))
 
-(define-idmt button$ widget$
+(define-idmt button$ (signaler$ widget$)
   (super-new)
   (inherit-field horiz-margin
                  vert-margin)
@@ -348,7 +363,6 @@
   (define-state up-color "WhiteSmoke")
   (define-state hover-color "Gainsboro")
   (define-state down-color "LightGray")
-  (define-state receivers (mutable-set))
   (define/override (on-mouse-event event)
     (define-values (x y w h)
       (send this get-current-extent))
@@ -368,8 +382,7 @@
          (if in-button?
              (set! mouse-state 'hover)
              (set! mouse-state 'up))
-         (for ([r (in-set receivers)])
-           (send r signal this)))]
+         (send this signal this))]
       ['motion
        (match mouse-state
          [(or 'up 'hover)
@@ -400,11 +413,7 @@
     (send label* draw dc
           (+ x horiz-margin) (+ y vert-margin)
           (- w (* 2 horiz-margin)) (- h (* 2 vert-margin)))
-    (send dc set-brush old-brush))
-  (define/public (register-receiver x)
-    (set-add! receivers x))
-  (define/public (unregister-receiver x)
-    (set-remove! receivers x)))
+    (send dc set-brush old-brush)))
 
 (define-idmt toggle$ widget$
   (super-new))
